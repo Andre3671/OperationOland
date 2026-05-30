@@ -48,10 +48,37 @@
     </main>
 
     <div v-if="!isOperationActive && !teamReady" class="holding-screen">
-      <div class="lock-icon">🔒</div>
-      <h2 class="tactical-title">ÅTKOMST NEKAD</h2>
-      <p class="status-text">Spelledningen kalibrerar just nu start- och målkoordinater för operationen.</p>
-      <div class="scanner-bar"></div>
+      <div class="holding-frame">
+        <div class="corner top-left"></div>
+        <div class="corner top-right"></div>
+        <div class="corner bottom-left"></div>
+        <div class="corner bottom-right"></div>
+
+        <div class="holding-header">
+          <span class="system-status">LINK-STATE: STANDBY</span>
+          <div class="tactical-type">MISSION CONTROL</div>
+        </div>
+
+        <div class="holding-body">
+          <div class="alert-icon">🔒</div>
+          <h1 class="mission-status">ÅTKOMST NEKAD</h1>
+          <h2 class="mission-title">UNDER PLANERING</h2>
+          <div class="mission-divider"></div>
+          <p class="mission-challenge">Spelledningen kalibrerar just nu start- och målkoordinater för operationen.</p>
+
+          <div class="standby-display">
+            <div class="lock-label">VÄNTAR PÅ KLARSIGNAL</div>
+            <div class="status-message">
+              <span class="blink">●</span> AVVAKTAR SPELLEDNING...
+            </div>
+          </div>
+        </div>
+
+        <div class="holding-footer">
+          <div class="scanner-line"></div>
+          <span class="coordinates">56.8000N, 16.6000E // ÖLAND</span>
+        </div>
+      </div>
     </div>
 
     <WelcomeScreen v-else-if="!teamReady && !welcomed" @accept="welcomed = true" />
@@ -568,56 +595,178 @@ function sendTeamChat() {
   bottom: 0;
   background: #0a0a0a;
   display: flex;
-  flex-direction: column;
   align-items: center;
   justify-content: center;
   z-index: 5000;
-  color: #00ccff;
-  text-align: center;
   padding: 20px;
-  font-family: 'JetBrains Mono', monospace;
+  box-sizing: border-box;
+  font-family: 'JetBrains Mono', 'Courier New', monospace;
+  overflow: auto;
 }
 
-.lock-icon {
-  font-size: 4rem;
-  margin-bottom: 20px;
+.holding-screen::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(
+    0deg,
+    rgba(0, 204, 255, 0.025) 0px,
+    rgba(0, 204, 255, 0.025) 1px,
+    transparent 1px,
+    transparent 3px
+  );
+  pointer-events: none;
+}
+
+.holding-frame {
+  position: relative;
+  width: 100%;
+  max-width: 500px;
+  background: #0a0a0a;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-left: 4px solid #00ccff;
+  color: #00ccff;
+  padding: 40px;
+  box-sizing: border-box;
+  box-shadow: 0 0 50px rgba(0, 0, 0, 0.5), 0 0 60px rgba(0, 204, 255, 0.12);
+  overflow: hidden;
+}
+
+.holding-frame .corner {
+  position: absolute;
+  width: 15px;
+  height: 15px;
+  border: 2px solid currentColor;
+  opacity: 0.5;
+}
+.holding-frame .top-left { top: 10px; left: 10px; border-right: none; border-bottom: none; }
+.holding-frame .top-right { top: 10px; right: 10px; border-left: none; border-bottom: none; }
+.holding-frame .bottom-left { bottom: 10px; left: 10px; border-right: none; border-top: none; }
+.holding-frame .bottom-right { bottom: 10px; right: 10px; border-left: none; border-top: none; }
+
+.holding-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 30px;
+  font-size: 0.7rem;
+  letter-spacing: 1px;
+}
+
+.holding-header .system-status { opacity: 0.6; }
+.holding-header .tactical-type { font-weight: bold; }
+
+.holding-body {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+}
+
+.holding-body .alert-icon {
+  font-size: 3rem;
+  margin-bottom: 10px;
   animation: pulse 2s infinite;
 }
 
-.tactical-title {
-  font-size: 2rem;
+.holding-body .mission-status {
+  font-size: 0.9rem;
+  letter-spacing: 5px;
+  margin: 0 0 5px;
+  opacity: 0.8;
+  font-weight: 700;
+}
+
+.holding-body .mission-title {
+  font-size: 1.8rem;
   font-weight: 900;
-  letter-spacing: 4px;
-  margin-bottom: 10px;
+  margin: 0 0 20px;
+  text-transform: uppercase;
+  letter-spacing: 0.15em;
 }
 
-.status-text {
-  color: #888;
-  max-width: 400px;
+.holding-body .mission-divider {
+  width: 100%;
+  height: 1px;
+  margin-bottom: 25px;
+  background: linear-gradient(90deg, #00ccff, transparent);
+}
+
+.holding-body .mission-challenge {
+  font-size: 1.05rem;
   line-height: 1.5;
+  margin: 0 0 28px;
+  color: #eee;
 }
 
-.scanner-bar {
-  width: 200px;
-  height: 2px;
-  background: #00ccff;
+.standby-display {
+  background: rgba(0, 204, 255, 0.06);
+  width: 100%;
+  padding: 18px;
+  border: 1px dashed rgba(0, 204, 255, 0.35);
+  box-sizing: border-box;
+}
+
+.standby-display .lock-label {
+  font-size: 0.7rem;
+  margin-bottom: 10px;
+  opacity: 0.7;
+  letter-spacing: 0.2em;
+}
+
+.holding-body .status-message {
+  font-size: 0.8rem;
+  opacity: 0.85;
+  letter-spacing: 0.1em;
+}
+
+.holding-body .blink {
+  animation: blink 1s infinite;
+  color: #ff3333;
+}
+
+@keyframes blink {
+  0% { opacity: 0; }
+  50% { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+.holding-footer {
   margin-top: 30px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+
+.holding-footer .scanner-line {
+  width: 100%;
+  height: 1px;
+  background: rgba(0, 204, 255, 0.18);
   position: relative;
   overflow: hidden;
 }
 
-.scanner-bar::after {
+.holding-footer .scanner-line::after {
   content: '';
   position: absolute;
-  top: 0; left: 0;
-  width: 50%; height: 100%;
-  background: #fff;
-  animation: scan-bar 1.5s infinite ease-in-out;
+  top: 0;
+  left: 0;
+  width: 40px;
+  height: 100%;
+  background: currentColor;
+  animation: scan 3s infinite linear;
 }
 
-@keyframes scan-bar {
-  0% { transform: translateX(-100%); }
-  100% { transform: translateX(200%); }
+@keyframes scan {
+  0% { left: 0%; }
+  100% { left: 100%; }
+}
+
+.holding-footer .coordinates {
+  font-size: 0.6rem;
+  opacity: 0.4;
+  letter-spacing: 0.1em;
 }
 
 .mode-toggle-btn {

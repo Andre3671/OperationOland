@@ -11,12 +11,37 @@ services:
     image: operationoland:latest
     container_name: operationoland
     restart: unless-stopped
+    depends_on:
+      - operationoland-sync
     # Exposed on the host; a reverse proxy (NginxProxyManager / SWAG) on
-    # the same Docker network terminates SSL and forwards 80/443.
+    # the same Docker network terminates SSL and forwards 80/443. Nginx
+    # inside this container proxies /api/* and /api/sync (WS) to the
+    # sync service over the shared docker network.
     ports:
       - "8091:80"
     networks:
       - proxy
+
+  operationoland-sync:
+    build:
+      context: ./server
+    image: operationoland-sync:latest
+    container_name: operationoland-sync
+    restart: unless-stopped
+    environment:
+      # Generate once with `openssl rand -hex 24` and set in the host shell
+      # before bringing the stack up. Without it the server runs in OPEN
+      # mode (any client can mutate admin state) — only acceptable for dev.
+      ADMIN_TOKEN: ${ADMIN_TOKEN:-}
+      PORT: "8090"
+      DB_PATH: /app/data/state.db
+    volumes:
+      - sync-data:/app/data
+    networks:
+      - proxy
+
+volumes:
+  sync-data:
 
 networks:
   # Shared external network with the reverse proxy. Create once with:

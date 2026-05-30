@@ -76,7 +76,12 @@ onMounted(async () => {
     attributionControl: false
   })
 
-  L.tileLayer('https://cartodb-basemaps-{s}.global.ssl.fastly.net/dark_all/{z}/{x}/{y}.png', {
+  const hour = new Date().getHours()
+  const isDaytime = hour >= 7 && hour < 20
+  const tileUrl = isDaytime
+    ? 'https://cartodb-basemaps-{s}.global.ssl.fastly.net/light_all/{z}/{x}/{y}.png'
+    : 'https://cartodb-basemaps-{s}.global.ssl.fastly.net/dark_all/{z}/{x}/{y}.png'
+  L.tileLayer(tileUrl, {
     maxZoom: 19
   }).addTo(map)
 

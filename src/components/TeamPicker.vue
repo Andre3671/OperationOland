@@ -14,8 +14,8 @@
         spellcheck="false"
         autofocus
       />
-      <button class="mission-btn claim-submit" type="submit" :disabled="!teamName.trim() || !canSubmit">
-        {{ submitLabel }}
+      <button class="mission-btn claim-submit" type="submit" :disabled="!teamName.trim() || !canSubmit || submitting">
+        {{ submitting ? 'ANSLUTER…' : submitLabel }}
       </button>
     </form>
 
@@ -52,7 +52,9 @@ const submitLabel = computed(() => {
   return hasFreeSlot.value ? 'BEKRÄFTA' : 'INGA LEDIGA RUTTER'
 })
 
-function submit() {
+const submitting = ref(false)
+
+async function submit() {
   error.value = ''
   const name = teamName.value.trim()
   if (!name) return
@@ -60,12 +62,17 @@ function submit() {
     error.value = 'Spelledningen har inte skapat några rutter än.'
     return
   }
-  const key = claimSlot(name)
-  if (!key) {
-    error.value = 'Alla rutter är redan tagna. Kontakta spelledningen.'
-    return
+  submitting.value = true
+  try {
+    const key = await claimSlot(name)
+    if (!key) {
+      error.value = 'Alla rutter är redan tagna. Kontakta spelledningen.'
+      return
+    }
+    emit('select', key, name)
+  } finally {
+    submitting.value = false
   }
-  emit('select', key, name)
 }
 </script>
 

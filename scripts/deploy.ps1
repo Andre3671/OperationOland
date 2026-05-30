@@ -27,9 +27,9 @@ $ErrorActionPreference = "Stop"
 $UnraidHost     = "root@192.168.0.6"
 $RemotePath     = "/mnt/user/appdata/operationoland"
 $ContainerName  = "operationoland"
+$SyncContainer  = "operationoland-sync"
 $Network        = "authentik_network"
 $HostPort       = "8091"
-$ImageTag       = "operationoland:latest"
 # ----------------------------------------------------------------------------
 
 $ProjectRoot = Split-Path -Parent $PSScriptRoot
@@ -64,6 +64,24 @@ if (-not $OrsKey) {
 }
 if (-not $OrsKey) {
     Warn "VITE_ORS_API_KEY not set in env or .env.local — road routes will fall back to straight lines."
+}
+
+# --- Resolve ADMIN_TOKEN ----------------------------------------------------
+# Without it the sync service runs in OPEN MODE (any client can mutate admin
+# state). Generate with `openssl rand -hex 24` and put it in .env.local as
+# ADMIN_TOKEN=... — same place as VITE_ORS_API_KEY.
+$AdminToken = $env:ADMIN_TOKEN
+if (-not $AdminToken) {
+    $envLocal = Join-Path $ProjectRoot ".env.local"
+    if (Test-Path $envLocal) {
+        $line = Select-String -Path $envLocal -Pattern "^\s*ADMIN_TOKEN\s*=" -ErrorAction SilentlyContinue | Select-Object -First 1
+        if ($line) {
+            $AdminToken = ($line.Line -replace "^\s*ADMIN_TOKEN\s*=\s*", "").Trim('"').Trim("'")
+        }
+    }
+}
+if (-not $AdminToken) {
+    Warn "ADMIN_TOKEN not set — sync server starts in OPEN MODE (no admin auth)."
 }
 
 # --- 1. Kill local node processes that may be holding file locks ------------
@@ -116,40 +134,38 @@ try {
     Pop-Location
 }
 
-# --- 4. Build + run on Unraid -----------------------------------------------
-Step "Stopping current container (if any)"
-Invoke-Ssh "docker stop $ContainerName 2>/dev/null; docker rm $ContainerName 2>/dev/null; true"
+# --- 4. Bring up the stack via docker compose -------------------------------
+# Two services: the nginx SPA container and the Node sync server. The compose
+# file reads VITE_ORS_API_KEY and ADMIN_TOKEN from the shell env on the
+# remote host, so we prefix the command with them.
+$composeEnv = ""
+if ($OrsKey)     { $composeEnv += "VITE_ORS_API_KEY='$OrsKey' " }
+if ($AdminToken) { $composeEnv += "ADMIN_TOKEN='$AdminToken' " }
+
+Step "Stopping current stack (if any)"
+Invoke-Ssh "cd $RemotePath && (docker compose down 2>/dev/null; true)"
 Ok "stopped"
 
 if (-not $SkipBuild) {
-    Step "Building image on Unraid (2-4 min)"
-    $buildArg = if ($OrsKey) { "--build-arg VITE_ORS_API_KEY=$OrsKey" } else { "" }
-    Invoke-Ssh "cd $RemotePath && docker build $buildArg -t $ImageTag ."
-    Ok "image built"
+    Step "Building + starting stack on Unraid (2-4 min)"
+    Invoke-Ssh "cd $RemotePath && ${composeEnv}docker compose up -d --build"
+    Ok "stack up"
 } else {
     Warn "skipping build (SkipBuild)"
+    Invoke-Ssh "cd $RemotePath && ${composeEnv}docker compose up -d"
+    Ok "stack started (no rebuild)"
 }
 
-Step "Starting container"
-$runCmd = @"
-docker run -d \
-  --name $ContainerName \
-  --restart unless-stopped \
-  --network $Network \
-  -p ${HostPort}:80 \
-  $ImageTag
-"@
-Invoke-Ssh $runCmd
-Ok "container started"
-
-Start-Sleep -Seconds 2
+Start-Sleep -Seconds 3
 
 # --- 5. Smoke tests ---------------------------------------------------------
 Step "Smoke testing http://localhost:${HostPort}/"
 $tests = @(
     "/",
     "/admin",
-    "/index.html"
+    "/index.html",
+    "/api/health",
+    "/api/state"
 )
 $failed = @()
 foreach ($t in $tests) {

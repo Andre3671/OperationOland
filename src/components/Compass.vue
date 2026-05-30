@@ -21,11 +21,15 @@ const props = defineProps({
 
 const heading = ref(0)
 const unsupported = ref(false)
-let listener = null
+const hasReading = ref(false)
+let absoluteListener = null
+let fallbackListener = null
+let usingAbsolute = false
 
 const rotationStyle = computed(() => ({ transform: `rotate(${-heading.value}deg)` }))
 const headingLabel = computed(() => {
   if (unsupported.value) return 'KOMPASS STÖDS EJ'
+  if (!hasReading.value) return 'KOMPASS…'
   const deg = Math.round(heading.value)
   return `N ${deg}°`
 })
@@ -63,16 +67,42 @@ const targetPointerStyle = computed(() => {
   }
 })
 
-function handleOrientation(event) {
-  const alpha = event.alpha ?? (event.webkitCompassHeading || 0)
-  if (alpha == null) {
-    unsupported.value = true
-    return
+// Convert a DeviceOrientationEvent to a compass heading in degrees (0 = N, CW).
+// iOS exposes the magnetic compass directly via webkitCompassHeading. The spec
+// alpha is rotation around z-axis (CCW from north when absolute is true), so we
+// flip the sign to match standard compass bearings.
+function readHeading(event) {
+  if (typeof event.webkitCompassHeading === 'number' && !Number.isNaN(event.webkitCompassHeading)) {
+    return event.webkitCompassHeading
   }
-  heading.value = alpha
+  if (typeof event.alpha === 'number' && !Number.isNaN(event.alpha)) {
+    return (360 - event.alpha + 360) % 360
+  }
+  return null
+}
+
+function handleAbsolute(event) {
+  const h = readHeading(event)
+  if (h == null) return
+  usingAbsolute = true
+  heading.value = h
+  hasReading.value = true
+}
+
+function handleFallback(event) {
+  // Skip non-absolute updates once the absolute sensor is delivering, otherwise
+  // the two streams fight and the needle freezes on the last "absolute" sample.
+  if (usingAbsolute) return
+  const h = readHeading(event)
+  if (h == null) return
+  heading.value = h
+  hasReading.value = true
 }
 
 async function startCompass() {
+  // iOS: requestPermission() must run inside a user gesture. WelcomeScreen
+  // calls it on the accept click, so by the time we mount here permission is
+  // either granted or denied — calling again here either no-ops or fails fast.
   if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
     try {
       const permission = await DeviceOrientationEvent.requestPermission()
@@ -81,14 +111,15 @@ async function startCompass() {
         return
       }
     } catch (err) {
-      unsupported.value = true
-      return
+      // Likely "not a user gesture" — events may still fire if a prior gesture
+      // already granted permission; keep listening rather than giving up.
     }
   }
 
-  listener = (event) => handleOrientation(event)
-  window.addEventListener('deviceorientationabsolute', listener, true)
-  window.addEventListener('deviceorientation', listener, true)
+  absoluteListener = (event) => handleAbsolute(event)
+  fallbackListener = (event) => handleFallback(event)
+  window.addEventListener('deviceorientationabsolute', absoluteListener, true)
+  window.addEventListener('deviceorientation', fallbackListener, true)
 }
 
 onMounted(() => {
@@ -96,10 +127,8 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
-  if (listener) {
-    window.removeEventListener('deviceorientationabsolute', listener, true)
-    window.removeEventListener('deviceorientation', listener, true)
-  }
+  if (absoluteListener) window.removeEventListener('deviceorientationabsolute', absoluteListener, true)
+  if (fallbackListener) window.removeEventListener('deviceorientation', fallbackListener, true)
 })
 </script>
 

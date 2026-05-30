@@ -226,13 +226,14 @@ function seedTeamLocation(t, clearHistory = false) {
   )
 }
 
-function selectTeam(t, urlTeamValue = t, options = {}) {
-  teamRef.value = t
-  setTeamActive(t, true)
+function selectTeam(slot, urlTeamValue = slot, options = {}) {
+  // The slot is already claimed server-side at this point (TeamPicker did it,
+  // or restoreTeamFromUrl below did it). Here we just bind it locally.
+  teamRef.value = slot
   const p = new URLSearchParams(window.location.search)
   p.set('team', urlTeamValue)
   history.replaceState({}, '', `${location.pathname}?${p.toString()}`)
-  seedTeamLocation(t, options.clearHistory === true)
+  seedTeamLocation(slot, options.clearHistory === true)
 }
 
 function switchNavigator() {
@@ -246,19 +247,21 @@ function switchNavigator() {
   history.replaceState({}, '', `${location.pathname}${p.toString() ? `?${p.toString()}` : ''}`)
 }
 
-function restoreTeamFromUrl() {
+async function restoreTeamFromUrl() {
   const requestedTeam = new URLSearchParams(window.location.search).get('team')?.trim()
   if (!requestedTeam || teamRef.value) return
 
   const normalized = requestedTeam.toLowerCase()
+  let slot = null
   if (teams.value[normalized]?.enabled) {
-    const claimedSlot = claimSlotKey(normalized)
-    if (claimedSlot) selectTeam(claimedSlot, requestedTeam)
-    return
+    slot = await claimSlotKey(normalized, requestedTeam)
   }
-
-  const claimedSlot = claimSlot(requestedTeam)
-  if (claimedSlot) selectTeam(claimedSlot, requestedTeam, { clearHistory: true })
+  if (!slot) {
+    slot = await claimSlot(requestedTeam)
+  }
+  if (slot) {
+    selectTeam(slot, requestedTeam, { clearHistory: !teams.value[normalized]?.enabled })
+  }
 }
 
 function completeMission() {

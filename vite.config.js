@@ -20,6 +20,13 @@ const mockApiPlugin = {
 export default defineConfig({
   plugins: [vue(), mockApiPlugin],
   server: {
-    port: 3005
+    port: 3005,
+    // Forward sync calls to a locally-running sync server so `npm run dev`
+    // works end-to-end. Start it in another shell: `cd server && npm start`.
+    // In production, nginx handles the same proxying — see nginx.conf.
+    proxy: {
+      '/api/sync': { target: 'ws://localhost:8090', ws: true, changeOrigin: true },
+      '/api':      { target: 'http://localhost:8090', changeOrigin: true },
+    }
   }
 })

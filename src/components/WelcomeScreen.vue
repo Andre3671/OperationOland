@@ -34,7 +34,7 @@
         <span>{{ stamp }}</span>
       </div>
 
-      <button class="accept-btn" @click="$emit('accept')">
+      <button class="accept-btn" @click="onAccept">
         ACCEPTERA UPPDRAG
       </button>
     </div>
@@ -44,7 +44,17 @@
 <script setup>
 import { computed } from 'vue'
 
-defineEmits(['accept'])
+const emit = defineEmits(['accept'])
+
+async function onAccept() {
+  // iOS requires DeviceOrientationEvent.requestPermission() inside a user
+  // gesture. Do it here — by the time the Compass component mounts, the
+  // gesture is gone and the prompt will be silently rejected.
+  if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
+    try { await DeviceOrientationEvent.requestPermission() } catch {}
+  }
+  emit('accept')
+}
 
 const stamp = computed(() => {
   const d = new Date()

@@ -37,15 +37,19 @@ function routeDistance(route) {
 }
 
 const ESTIMATED_DRIVING_KMH = 55
+const ESTIMATED_WALKING_KMH = 5
 const ROAD_DISTANCE_FACTOR = 1.25
+const WALKING_DISTANCE_FACTOR = 1.15
 
-function estimateSegmentMinutes(from, to) {
-  const distanceKm = haversineDistance(from, to) * ROAD_DISTANCE_FACTOR
+function estimateSegmentMinutes(from, to, walking = false) {
+  const factor = walking ? WALKING_DISTANCE_FACTOR : ROAD_DISTANCE_FACTOR
+  const kmh = walking ? ESTIMATED_WALKING_KMH : ESTIMATED_DRIVING_KMH
+  const distanceKm = haversineDistance(from, to) * factor
   if (!Number.isFinite(distanceKm) || distanceKm <= 0) return 0
-  return Math.max(1, Math.round((distanceKm / ESTIMATED_DRIVING_KMH) * 60))
+  return Math.max(1, Math.round((distanceKm / kmh) * 60))
 }
 
-function getSegmentMinutes(route, waypoints) {
+function getSegmentMinutes(route, waypoints, walking = false) {
   const legs = Math.max(0, (waypoints?.length || 0) - 1)
   if (legs === 0) return []
 
@@ -54,7 +58,7 @@ function getSegmentMinutes(route, waypoints) {
     if (Number.isFinite(durationSeconds) && durationSeconds > 0) {
       return Math.max(1, Math.round(durationSeconds / 60))
     }
-    return estimateSegmentMinutes(waypoints[index], waypoints[index + 1])
+    return estimateSegmentMinutes(waypoints[index], waypoints[index + 1], walking)
   })
 }
 
@@ -398,13 +402,17 @@ export function useAdminTracking() {
       // OpenRouteService expects [lng, lat] pairs and supports avoid_features: ["highways"]
       // to keep routes off motorways (E4, E22, etc.).
       const coordinates = validPoints.map(w => [w[1], w[0]])
+      const walking = walkingMode.value
       const body = {
         coordinates,
-        radiuses: validPoints.map(() => 2000),
+        // Walking snaps must stay tight — a 2 km radius on foot lets ORS leap
+        // across waterways via the nearest ferry and return an absurd duration.
+        radiuses: validPoints.map(() => walking ? 250 : 2000),
       }
-      if (avoidHighways.value) body.options = { avoid_features: ['highways'] }
+      if (!walking && avoidHighways.value) body.options = { avoid_features: ['highways'] }
 
-      const url = 'https://api.openrouteservice.org/v2/directions/driving-car/geojson'
+      const profile = walking ? 'foot-walking' : 'driving-car'
+      const url = `https://api.openrouteservice.org/v2/directions/${profile}/geojson`
       console.log("[Routing] ORS request:", url, body)
 
       const res = await fetch(url, {
@@ -636,7 +644,7 @@ export function useAdminTracking() {
         
         // Calculate segment durations (in minutes) from ORS when available,
         // otherwise estimate from each generated leg so the UI never shows all zeroes.
-        const segmentMinutes = getSegmentMinutes(teamRoute, selectedTeamWaypoints)
+        const segmentMinutes = getSegmentMinutes(teamRoute, selectedTeamWaypoints, walkingMode.value)
         
         const startCheckpoint = {
           id: nextCheckpointId.value++,

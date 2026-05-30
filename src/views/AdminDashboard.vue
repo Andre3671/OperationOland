@@ -174,6 +174,9 @@
         <div class="section-title">RUTT-GENERATOR</div>
         <div class="meeting-info">
           <p style="color: #888; font-size: 0.75rem; margin-bottom: 10px;">Skapar separata vägar för alla team från start till mål med en central återsamlingsplats.</p>
+          <div v-if="walkingMode" class="walking-hint">
+            GÅNG-MODE: autogen använder gångprofil och 5 km/h. Mellan-CPs väljs fortfarande via geokodning — kontrollera och justera platserna manuellt efteråt, autogen kan välja platser utan gångbar väg.
+          </div>
           
           <div v-if="genProgress" class="gen-progress-box">
             <div class="spinner-small"></div>
@@ -1230,6 +1233,17 @@ const toggleSharedSimulation = () => {
   color: #666;
   margin-bottom: 10px;
   letter-spacing: 0.02em;
+}
+
+.walking-hint {
+  font-size: 0.7rem;
+  color: #ffcc00;
+  background: rgba(255, 204, 0, 0.08);
+  border: 1px solid rgba(255, 204, 0, 0.35);
+  padding: 6px 8px;
+  margin-bottom: 10px;
+  line-height: 1.35;
+  border-radius: 2px;
 }
 
 .point-row {

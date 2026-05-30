@@ -1,0 +1,87 @@
+:root{
+  --bg: #1a1a1a;
+  --neon: #00ff00;
+  --warn: #ff0000;
+  --muted: rgba(0,0,0,0.6);
+}
+html,body,#app{height:100%;}
+body{
+  margin:0;
+  background:var(--bg);
+  color:var(--neon);
+  font-family: "Courier New", monospace;
+}
+.app-header{
+  position:fixed;top:0;left:0;right:0;height:56px;display:flex;align-items:center;gap:12px;padding:8px 12px;background:rgba(10,10,10,0.7);backdrop-filter:blur(2px);z-index:1000;border-bottom:1px solid rgba(0,255,0,0.08);
+}
+.header-left{display:flex;align-items:center;gap:10px}
+.title{font-weight:700}
+.status-dot{width:12px;height:12px;border-radius:50%;background:var(--neon);box-shadow:0 0 6px var(--neon);animation:pulse 1.6s infinite}
+@keyframes pulse{0%{transform:scale(1)}50%{transform:scale(1.25)}100%{transform:scale(1)}}
+.map-container{position:fixed;inset:0;z-index:1}
+.compass{position:fixed;right:12px;top:72px;z-index:900;opacity:0.95;width:96px;height:96px;pointer-events:none;display:flex;flex-direction:column;align-items:center;gap:4px}
+.compass-shell{width:100%;height:100%;transition:transform 0.3s ease-out;transform-origin:center center;}
+.heading-label{font-size:10px;color:var(--neon);letter-spacing:0.15em;text-transform:uppercase;text-align:center;width:100%;}
+.admin-shell{display:flex;min-height:100vh;background:#111;color:var(--neon);}
+.admin-map{flex:3;position:relative;background:#0f0f0f;}
+.admin-leaflet-map{width:100%;height:100vh;}
+.admin-sidebar{flex:1;min-width:320px;padding:24px;border-left:1px solid rgba(0,255,0,0.12);background:rgba(10,10,10,0.95);overflow-y:auto;}
+.admin-topbar{display:flex;justify-content:space-between;align-items:center;padding:16px 24px;background:rgba(0,0,0,0.35);border-bottom:1px solid rgba(0,255,0,0.15);}
+.admin-title{font-size:1rem;font-weight:700;letter-spacing:0.3em;text-transform:uppercase;}
+.admin-controls{display:flex;gap:10px;}
+.refresh-btn,.debug-btn{padding:10px 16px;background:#111;border:1px solid #00ff00;color:var(--neon);font-family:inherit;cursor:pointer;border-radius:8px}
+.debug-btn.active{background:#00ff00;color:#000;}
+.admin-error{padding:24px;color:#ff4d4d;}
+.sidebar-header{margin-bottom:22px;}
+.debug-panel{margin-top:14px;padding:12px;background:rgba(0,255,0,0.06);border:1px solid rgba(0,255,0,0.15);border-radius:10px;}
+.debug-row{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:10px}
+.debug-row label{width:40px;font-size:0.85rem;color:#9ef19e;}
+.debug-row input{flex:1;padding:8px 10px;background:#111;border:1px solid rgba(0,255,0,0.15);color:var(--neon);border-radius:6px;font-family:inherit;}
+.debug-update-btn{width:100%;margin-top:8px;padding:10px 12px;background:#111;border:1px solid rgba(0,255,0,0.15);color:var(--neon);cursor:pointer;border-radius:8px;text-transform:uppercase;}
+.sidebar-title{font-size:1.1rem;font-weight:700;letter-spacing:0.2em;text-transform:uppercase;}
+.sidebar-subtitle{margin-top:8px;opacity:0.75;line-height:1.5;}
+.team-card{margin-bottom:18px;padding:18px;background:rgba(0,0,0,0.35);border:1px solid rgba(0,255,0,0.12);border-radius:14px;}
+.team-card-title{font-size:1rem;font-weight:700;margin-bottom:14px;}
+.team-row{display:flex;justify-content:space-between;padding:8px 0;border-top:1px solid rgba(0,255,0,0.08);}
+.team-row:first-of-type{border-top:none;}
+.status-ok{color:#00ff00;}
+.status-alert{color:#ffb400;}
+.status-warn{color:#ff0000;}
+.live-tooltip{color:#00ff00 !important; background:rgba(0,0,0,0.75) !important; border:none !important; font-family: inherit !important;}
+.overlay-full{
+  position:fixed;inset:0;display:flex;align-items:center;justify-content:center;flex-direction:column;padding:24px;z-index:2000;color:#000;
+}
+.overlay-red{background:var(--warn);color:#fff}
+.overlay-green{background:var(--neon);color:#000}
+.mission-btn{margin-top:18px;padding:14px 20px;background:#111;border:2px solid rgba(0,0,0,0.2);color:var(--neon);font-weight:700;border-radius:8px}
+.team-picker .mission-btn{min-width:110px}
+.compass img{width:100%;height:100%}
+
+/* Navigator: next-checkpoint marker (pulsing) */
+.next-checkpoint-marker{
+  position:relative;
+  width:48px;height:48px;
+  display:flex;align-items:center;justify-content:center;
+}
+.next-checkpoint-pulse{
+  position:absolute;inset:0;border-radius:50%;
+  background:var(--team-color, #00ccff);
+  opacity:0.45;
+  animation:nextCheckpointPulse 1.6s ease-out infinite;
+  pointer-events:none;
+}
+.next-checkpoint-dot{
+  position:relative;
+  background:var(--team-color, #00ccff);
+  color:#000;
+  width:30px;height:30px;border-radius:50%;
+  display:flex;align-items:center;justify-content:center;
+  font-weight:bold;font-size:14px;
+  border:3px solid #fff;
+  box-shadow:0 0 12px rgba(0,0,0,0.6),0 0 18px var(--team-color, #00ccff);
+}
+@keyframes nextCheckpointPulse{
+  0%{transform:scale(0.6);opacity:0.55}
+  80%{transform:scale(1.6);opacity:0}
+  100%{transform:scale(1.6);opacity:0}
+}

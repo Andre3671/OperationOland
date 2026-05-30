@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <circle cx="50" cy="50" r="48" stroke="#00ff00" stroke-width="2" fill="none" opacity="0.2"/>
+  <g transform="translate(50 50)">
+    <polygon points="0,-40 8,0 0,-10 -8,0" fill="#00ff00"/>
+    <text x="0" y="48" font-size="8" fill="#00ff00" text-anchor="middle">N</text>
+  </g>
+</svg>

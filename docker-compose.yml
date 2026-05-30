@@ -1,0 +1,26 @@
+services:
+  operationoland:
+    build:
+      context: .
+      args:
+        # Reads VITE_ORS_API_KEY from the host shell at build time.
+        # CI passes it via --build-arg from GitHub secrets; for local
+        # builds, set it in the shell first:
+        #   $env:VITE_ORS_API_KEY = "eyJv..."; docker compose build
+        VITE_ORS_API_KEY: ${VITE_ORS_API_KEY:-}
+    image: operationoland:latest
+    container_name: operationoland
+    restart: unless-stopped
+    # Exposed on the host; a reverse proxy (NginxProxyManager / SWAG) on
+    # the same Docker network terminates SSL and forwards 80/443.
+    ports:
+      - "8091:80"
+    networks:
+      - proxy
+
+networks:
+  # Shared external network with the reverse proxy. Create once with:
+  #   docker network create authentik_network
+  proxy:
+    name: authentik_network
+    external: true

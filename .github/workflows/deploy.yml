@@ -1,0 +1,98 @@
+name: Deploy
+
+# Runs on the self-hosted Unraid runner (same one used by WeatherCompare) so
+# we can build the Docker image and restart the container without external
+# services.
+#
+# Triggers:
+#   - Push to main → automatic deploy
+#   - Manual trigger from the Actions tab → "Run workflow"
+#
+# Required secret:
+#   VITE_ORS_API_KEY  — OpenRouteService key, baked into the SPA bundle
+#                       at build time (Vite inlines all VITE_* envs).
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - "**.md"
+      - ".claude/**"
+      - "memory/**"
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-operationoland
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: [self-hosted, unraid]
+    timeout-minutes: 15
+
+    env:
+      CONTAINER_NAME: operationoland
+      IMAGE_TAG: operationoland:latest
+      NETWORK: authentik_network
+      HOST_PORT: "8091"
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Stop existing container
+        run: |
+          docker stop "$CONTAINER_NAME" 2>/dev/null || true
+          docker rm   "$CONTAINER_NAME" 2>/dev/null || true
+
+      - name: Build Docker image
+        run: |
+          docker build \
+            --build-arg VITE_ORS_API_KEY="${{ secrets.VITE_ORS_API_KEY }}" \
+            -t "$IMAGE_TAG" .
+
+      - name: Start new container
+        run: |
+          docker run -d \
+            --name "$CONTAINER_NAME" \
+            --restart unless-stopped \
+            --network "$NETWORK" \
+            -p "$HOST_PORT":80 \
+            "$IMAGE_TAG"
+
+      - name: Wait for the server to bind
+        run: |
+          for i in $(seq 1 30); do
+            if curl -fsS "http://localhost:$HOST_PORT/" -o /dev/null; then
+              echo "server up after ${i}s"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "::error::Server did not respond on port $HOST_PORT within 30s"
+          docker logs "$CONTAINER_NAME" --tail 100
+          exit 1
+
+      - name: Smoke tests
+        run: |
+          set -e
+          fail=0
+          for path in "/" "/admin" "/index.html"; do
+            code=$(curl -s -o /dev/null -w "%{http_code}" "http://localhost:$HOST_PORT$path")
+            if [[ "$code" == 2* ]]; then
+              echo "  [ok]   $path -> $code"
+            else
+              echo "  [FAIL] $path -> $code"
+              fail=1
+            fi
+          done
+          if [[ $fail -ne 0 ]]; then
+            echo "::error::One or more smoke tests failed"
+            docker logs "$CONTAINER_NAME" --tail 100
+            exit 1
+          fi
+
+      - name: Prune dangling images
+        if: always()
+        run: docker image prune -f

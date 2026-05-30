@@ -1,0 +1,460 @@
+<template>
+  <Transition name="modal-fade">
+    <div v-if="active" class="modal-backdrop">
+      <div class="modal-content" :class="overlayTheme">
+        <!-- Decorative Corners -->
+        <div class="corner top-left"></div>
+        <div class="corner top-right"></div>
+        <div class="corner bottom-left"></div>
+        <div class="corner bottom-right"></div>
+
+        <!-- Header -->
+        <div class="modal-header">
+          <span class="system-status">LINK-STATE: ESTABLISHED</span>
+          <div class="tactical-type">{{ checkpoint.type === 'task' ? 'FIELD MISSION' : 'STAGING POINT' }}</div>
+        </div>
+
+        <!-- Start Layout -->
+        <div v-if="checkpoint.type === 'start'" class="layout-body">
+          <div class="alert-icon">🚩</div>
+          <h1 class="mission-status">UPPSAMLAD VID START</h1>
+          <h2 class="mission-title">{{ taskName }}</h2>
+          <div v-if="cityLine" class="mission-city">{{ cityLine }}</div>
+          <div v-if="checkpoint.region" class="mission-region">{{ checkpoint.region }}</div>
+          <div class="mission-divider"></div>
+          <p class="mission-challenge">{{ checkpoint.challenge }}</p>
+
+          <button class="action-btn task-btn" @click="handleUnlock">
+            [STARTA OPERATIONEN]
+          </button>
+        </div>
+
+        <!-- Finish Layout -->
+        <div v-else-if="checkpoint.type === 'finish'" class="layout-body">
+          <div class="alert-icon">🏁</div>
+          <h1 class="mission-status">OPERATION SLUTFÖRD</h1>
+          <h2 class="mission-title">{{ taskName }}</h2>
+          <div v-if="cityLine" class="mission-city">{{ cityLine }}</div>
+          <div v-if="checkpoint.region" class="mission-region">{{ checkpoint.region }}</div>
+          <div class="mission-divider"></div>
+          <p class="mission-challenge">{{ checkpoint.challenge }}</p>
+
+          <div class="status-message" style="margin-top: 20px;">
+            <span class="blink">●</span> AVVAKTAR SPELLEDNING...
+          </div>
+        </div>
+
+        <!-- Standard Task Layout -->
+        <div v-else-if="checkpoint.type === 'task'" class="layout-body">
+          <div class="alert-icon">📍</div>
+          <h1 class="mission-status">MÅLOMRÅDE NÅTT</h1>
+          <h2 class="mission-title">{{ taskName }}</h2>
+          <div v-if="cityLine" class="mission-city">{{ cityLine }}</div>
+          <div v-if="checkpoint.region" class="mission-region">{{ checkpoint.region }}</div>
+          <div class="mission-divider"></div>
+          <p class="mission-challenge">{{ checkpoint.challenge }}</p>
+
+          <button class="action-btn task-btn" @click="handleUnlock">
+            [UPPDRAG SLUTFÖRT - LÅS UPP NÄSTA]
+          </button>
+        </div>
+
+        <!-- Meeting Point Layout -->
+        <div v-else-if="checkpoint.type === 'meeting'" class="layout-body">
+          <div class="alert-icon">⏸️</div>
+          <h1 class="mission-status">ETAPP SLUTFÖRD</h1>
+          <h2 class="mission-title">ÅTERSAMLING</h2>
+          <div class="mission-divider"></div>
+          <p class="mission-challenge">{{ checkpoint.challenge }}</p>
+
+          <div class="pause-display">
+            <div class="lock-label">PAUSLÄGE AKTIVT</div>
+            <div class="pause-copy">
+              Nästa checkpoint är dold. Ni är i återsamlingszonen och får använda mobilerna tills laget är redo att fortsätta.
+            </div>
+          </div>
+
+          <button 
+            class="action-btn meeting-btn" 
+            :class="{ 'is-holding': isHolding }"
+            @pointerdown.prevent="startHold"
+            @pointerup.prevent="cancelHold"
+            @pointerleave="cancelHold"
+            @pointercancel="cancelHold"
+            @contextmenu.prevent
+          >
+            <span class="hold-fill" :style="{ transform: `scaleX(${holdProgress})` }"></span>
+            <span class="hold-label">{{ holdButtonLabel }}</span>
+          </button>
+          <div class="status-message">
+            <span class="blink">●</span> HÅLL INNE KNAPPEN I 5 SEKUNDER FÖR NÄSTA CHECKPOINT
+          </div>
+        </div>
+
+        <!-- Footer Decor -->
+        <div class="modal-footer">
+          <div class="scanner-line"></div>
+          <span class="coordinates">{{ checkpoint.lat.toFixed(4) }}N, {{ checkpoint.lng.toFixed(4) }}E</span>
+        </div>
+      </div>
+    </div>
+  </Transition>
+</template>
+
+<script setup>
+import { ref, computed, watch, onUnmounted } from 'vue'
+
+const props = defineProps({
+  checkpoint: { type: Object, required: true },
+  active: { type: Boolean, default: false }
+})
+
+const emit = defineEmits(['unlock'])
+
+const HOLD_MS = 5000
+const holdProgress = ref(0)
+const isHolding = ref(false)
+let holdInterval = null
+let holdStartedAt = 0
+
+const taskName = computed(() => {
+  const cp = props.checkpoint || {}
+  return cp.name || cp.title || ''
+})
+
+const cityLine = computed(() => {
+  const cp = props.checkpoint || {}
+  return cp.city || ''
+})
+
+const overlayTheme = computed(() => {
+  const t = props.checkpoint.type
+  if (t === 'start') return 'theme-cyan'
+  if (t === 'finish') return 'theme-red'
+  if (t === 'meeting') return 'theme-yellow'
+  return 'theme-green'
+})
+
+const holdButtonLabel = computed(() => {
+  if (!isHolding.value) return 'HÅLL INNE FÖR NÄSTA CHECKPOINT'
+  const remaining = Math.max(0, Math.ceil((HOLD_MS * (1 - holdProgress.value)) / 1000))
+  return `FORTSÄTT HÅLLA ${remaining}s`
+})
+
+const clearHold = () => {
+  if (holdInterval) {
+    clearInterval(holdInterval)
+    holdInterval = null
+  }
+  isHolding.value = false
+  holdProgress.value = 0
+}
+
+const startHold = () => {
+  if (props.checkpoint.type !== 'meeting' || holdInterval) return
+  isHolding.value = true
+  holdStartedAt = Date.now()
+  holdProgress.value = 0
+  holdInterval = setInterval(() => {
+    holdProgress.value = Math.min(1, (Date.now() - holdStartedAt) / HOLD_MS)
+    if (holdProgress.value >= 1) {
+      if (holdInterval) clearInterval(holdInterval)
+      holdInterval = null
+      isHolding.value = false
+      emit('unlock')
+    }
+  }, 50)
+}
+
+const cancelHold = () => {
+  if (!isHolding.value) return
+  clearHold()
+}
+
+const handleUnlock = () => {
+  emit('unlock')
+}
+
+watch(() => props.active, (isNowActive) => {
+  if (!isNowActive) clearHold()
+})
+
+watch(() => props.checkpoint.id, clearHold)
+
+onUnmounted(() => {
+  clearHold()
+})
+</script>
+
+<style scoped>
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.75);
+  backdrop-filter: blur(8px);
+  z-index: 10000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  box-sizing: border-box;
+}
+
+.modal-content {
+  position: relative;
+  width: 100%;
+  max-width: 500px;
+  background: #0a0a0a;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  padding: 40px;
+  box-shadow: 0 0 50px rgba(0, 0, 0, 0.5);
+  font-family: 'JetBrains Mono', 'Courier New', monospace;
+  overflow: hidden;
+}
+
+/* Themes */
+.theme-green {
+  border-left: 4px solid #00ff00;
+  color: #00ff00;
+}
+.theme-green .mission-divider { background: linear-gradient(90deg, #00ff00, transparent); }
+
+.theme-yellow {
+  border-left: 4px solid #ffcc00;
+  color: #ffcc00;
+}
+.theme-yellow .mission-divider { background: linear-gradient(90deg, #ffcc00, transparent); }
+
+.theme-cyan {
+  border-left: 4px solid #00ccff;
+  color: #00ccff;
+}
+.theme-cyan .mission-divider { background: linear-gradient(90deg, #00ccff, transparent); }
+
+.theme-red {
+  border-left: 4px solid #ff5566;
+  color: #ff5566;
+}
+.theme-red .mission-divider { background: linear-gradient(90deg, #ff5566, transparent); }
+
+/* Corners */
+.corner {
+  position: absolute;
+  width: 15px;
+  height: 15px;
+  border: 2px solid currentColor;
+  opacity: 0.5;
+}
+.top-left { top: 10px; left: 10px; border-right: none; border-bottom: none; }
+.top-right { top: 10px; right: 10px; border-left: none; border-bottom: none; }
+.bottom-left { bottom: 10px; left: 10px; border-right: none; border-top: none; }
+.bottom-right { bottom: 10px; right: 10px; border-left: none; border-top: none; }
+
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 30px;
+  font-size: 0.7rem;
+  letter-spacing: 1px;
+}
+
+.system-status { opacity: 0.6; }
+.tactical-type { font-weight: bold; }
+
+.layout-body {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+}
+
+.alert-icon {
+  font-size: 3rem;
+  margin-bottom: 10px;
+}
+
+.mission-status {
+  font-size: 0.9rem;
+  letter-spacing: 5px;
+  margin-bottom: 5px;
+  opacity: 0.8;
+}
+
+.mission-title {
+  font-size: 1.8rem;
+  font-weight: 900;
+  margin-bottom: 20px;
+  text-transform: uppercase;
+}
+
+.mission-city {
+  font-size: 0.85rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  opacity: 0.85;
+  margin-top: -10px;
+  margin-bottom: 4px;
+  font-weight: 600;
+}
+
+.mission-region {
+  font-size: 0.75rem;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  opacity: 0.55;
+  margin-top: 0;
+  margin-bottom: 18px;
+}
+
+.mission-divider {
+  width: 100%;
+  height: 1px;
+  margin-bottom: 25px;
+}
+
+.mission-challenge {
+  font-size: 1.1rem;
+  line-height: 1.5;
+  margin-bottom: 40px;
+  color: #eee;
+}
+
+.action-btn {
+  width: 100%;
+  background: transparent;
+  border: 1px solid currentColor;
+  padding: 18px;
+  color: inherit;
+  font-weight: bold;
+  font-family: inherit;
+  cursor: pointer;
+  transition: all 0.2s;
+  letter-spacing: 1px;
+}
+
+.action-btn:hover {
+  background: currentColor;
+  color: #000;
+}
+
+.lockdown-display {
+  background: rgba(255, 255, 255, 0.05);
+  width: 100%;
+  padding: 20px;
+  margin-bottom: 30px;
+  border: 1px dashed rgba(255, 255, 255, 0.1);
+}
+
+.pause-display {
+  background: rgba(255, 204, 0, 0.08);
+  width: 100%;
+  padding: 20px;
+  margin-bottom: 24px;
+  border: 1px dashed rgba(255, 204, 0, 0.35);
+}
+
+.lock-label {
+  font-size: 0.7rem;
+  margin-bottom: 10px;
+  opacity: 0.7;
+}
+
+.countdown-value {
+  font-size: 3rem;
+  font-weight: 900;
+}
+
+.pause-copy {
+  color: #eee;
+  font-size: 0.95rem;
+  line-height: 1.5;
+}
+
+.meeting-btn {
+  position: relative;
+  overflow: hidden;
+  touch-action: none;
+  user-select: none;
+}
+
+.meeting-btn.is-holding {
+  background: rgba(255, 204, 0, 0.08);
+}
+
+.hold-fill {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  background: currentColor;
+  opacity: 0.22;
+  transform: scaleX(0);
+  transform-origin: left;
+}
+
+.hold-label {
+  position: relative;
+  z-index: 1;
+}
+
+.status-message {
+  font-size: 0.8rem;
+  opacity: 0.7;
+}
+
+.blink {
+  animation: blink 1s infinite;
+  color: #ff3333;
+}
+
+@keyframes blink {
+  0% { opacity: 0; }
+  50% { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+.modal-footer {
+  margin-top: 30px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+
+.scanner-line {
+  width: 100%;
+  height: 1px;
+  background: rgba(255, 255, 255, 0.1);
+  position: relative;
+}
+
+.scanner-line::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 40px;
+  height: 100%;
+  background: currentColor;
+  animation: scan 3s infinite linear;
+}
+
+@keyframes scan {
+  0% { left: 0%; }
+  100% { left: 100%; }
+}
+
+.coordinates {
+  font-size: 0.6rem;
+  opacity: 0.4;
+}
+
+/* Animations */
+.modal-fade-enter-active, .modal-fade-leave-active {
+  transition: all 0.4s ease;
+}
+.modal-fade-enter-from, .modal-fade-leave-to {
+  opacity: 0;
+  transform: scale(0.9);
+}
+</style>

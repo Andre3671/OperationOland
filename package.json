@@ -1,0 +1,21 @@
+{
+  "name": "operation-oland",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview --port 4173",
+    "deploy": "pwsh scripts/deploy.ps1",
+    "deploy:fast": "pwsh scripts/deploy.ps1 -SkipClean"
+  },
+  "dependencies": {
+    "vue": "^3.4.0",
+    "vue-router": "^4.4.0",
+    "leaflet": "^1.9.4"
+  },
+  "devDependencies": {
+    "vite": "^5.0.0",
+    "@vitejs/plugin-vue": "^4.1.0"
+  }
+}

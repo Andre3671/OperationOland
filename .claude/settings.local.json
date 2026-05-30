@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(ls \"C:/Users/babyb/Desktop/Projekt/WeatherCompare\")",
+      "Read(//c/Users/babyb/Desktop/Projekt/WeatherCompare/**)"
+    ]
+  }
+}

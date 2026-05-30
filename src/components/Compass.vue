@@ -26,27 +26,35 @@ const hasReading = ref(false)
 let absoluteListener = null
 let fallbackListener = null
 let usingAbsolute = false
+let sensor = null
+let usingSensor = false
 
 // Temporary instrumentation: when the compass is stuck without a reading we
 // surface why on-device — easier than remote-debugging Chrome on Android.
 const absCount = ref(0)
 const relCount = ref(0)
+const sensorCount = ref(0)
 const lastAlpha = ref(null)
 const lastAbsAlpha = ref(null)
 const lastWebkit = ref(null)
+const sensorState = ref('off')
 const permState = ref('n/a')
 const secureCtx = ref(typeof window !== 'undefined' ? window.isSecureContext : false)
 const hasOrientationApi = ref(typeof window !== 'undefined' && typeof window.DeviceOrientationEvent !== 'undefined')
+const hasSensorApi = ref(typeof window !== 'undefined' && typeof window.AbsoluteOrientationSensor !== 'undefined')
 const showDebug = computed(() => !hasReading.value || unsupported.value)
 const debugLine = computed(() => {
   const parts = []
   parts.push(`abs:${absCount.value}`)
   parts.push(`rel:${relCount.value}`)
+  parts.push(`s:${sensorCount.value}`)
   if (lastAbsAlpha.value != null) parts.push(`aA:${Math.round(lastAbsAlpha.value)}`)
   if (lastAlpha.value != null) parts.push(`a:${Math.round(lastAlpha.value)}`)
   if (lastWebkit.value != null) parts.push(`wk:${Math.round(lastWebkit.value)}`)
   if (!secureCtx.value) parts.push('!https')
-  if (!hasOrientationApi.value) parts.push('!api')
+  if (!hasOrientationApi.value) parts.push('!ev')
+  if (!hasSensorApi.value) parts.push('!sens')
+  if (sensorState.value !== 'off') parts.push(`S:${sensorState.value}`)
   if (permState.value !== 'n/a') parts.push(`p:${permState.value}`)
   return parts.join(' ')
 })
@@ -112,6 +120,7 @@ function handleAbsolute(event) {
   if (typeof event.webkitCompassHeading === 'number') lastWebkit.value = event.webkitCompassHeading
   const h = readHeading(event)
   if (h == null) return
+  if (usingSensor) return
   usingAbsolute = true
   heading.value = h
   hasReading.value = true
@@ -123,11 +132,61 @@ function handleFallback(event) {
   if (typeof event.webkitCompassHeading === 'number') lastWebkit.value = event.webkitCompassHeading
   // Skip non-absolute updates once the absolute sensor is delivering, otherwise
   // the two streams fight and the needle freezes on the last "absolute" sample.
-  if (usingAbsolute) return
+  if (usingAbsolute || usingSensor) return
   const h = readHeading(event)
   if (h == null) return
   heading.value = h
   hasReading.value = true
+}
+
+// Generic Sensor API path — works on modern Android Chrome over HTTPS, even
+// when DeviceOrientation events arrive with alpha=null. Converts the sensor's
+// quaternion to a yaw angle (heading from north, clockwise).
+function quaternionToHeading(q) {
+  const [x, y, z, w] = q
+  // Yaw (rotation around z axis) from quaternion. Standard ENU frame: 0 = east,
+  // so we shift by 90° and flip to get a compass bearing (0 = north, CW).
+  const siny_cosp = 2 * (w * z + x * y)
+  const cosy_cosp = 1 - 2 * (y * y + z * z)
+  const yawRad = Math.atan2(siny_cosp, cosy_cosp)
+  const yawDeg = (yawRad * 180) / Math.PI
+  return (90 - yawDeg + 360) % 360
+}
+
+async function startSensor() {
+  if (typeof window.AbsoluteOrientationSensor === 'undefined') return false
+  try {
+    if (navigator.permissions?.query) {
+      const results = await Promise.all([
+        navigator.permissions.query({ name: 'accelerometer' }).catch(() => null),
+        navigator.permissions.query({ name: 'magnetometer' }).catch(() => null),
+        navigator.permissions.query({ name: 'gyroscope' }).catch(() => null),
+      ])
+      const denied = results.find(r => r && r.state === 'denied')
+      if (denied) {
+        sensorState.value = 'denied'
+        return false
+      }
+    }
+    sensor = new window.AbsoluteOrientationSensor({ frequency: 30, referenceFrame: 'screen' })
+    sensor.addEventListener('reading', () => {
+      sensorCount.value += 1
+      if (!sensor.quaternion) return
+      usingSensor = true
+      const h = quaternionToHeading(sensor.quaternion)
+      heading.value = h
+      hasReading.value = true
+    })
+    sensor.addEventListener('error', (e) => {
+      sensorState.value = e?.error?.name || 'err'
+    })
+    sensor.start()
+    sensorState.value = 'on'
+    return true
+  } catch (err) {
+    sensorState.value = err?.name || 'err'
+    return false
+  }
 }
 
 async function startCompass() {
@@ -153,6 +212,11 @@ async function startCompass() {
   fallbackListener = (event) => handleFallback(event)
   window.addEventListener('deviceorientationabsolute', absoluteListener, true)
   window.addEventListener('deviceorientation', fallbackListener, true)
+
+  // Generic Sensor API in parallel. On Android Chrome, DeviceOrientation often
+  // fires once with alpha=null and then nothing; the sensor API keeps streaming
+  // even when the legacy events go silent. First one to deliver a reading wins.
+  startSensor()
 }
 
 onMounted(() => {
@@ -162,6 +226,10 @@ onMounted(() => {
 onBeforeUnmount(() => {
   if (absoluteListener) window.removeEventListener('deviceorientationabsolute', absoluteListener, true)
   if (fallbackListener) window.removeEventListener('deviceorientation', fallbackListener, true)
+  if (sensor) {
+    try { sensor.stop() } catch {}
+    sensor = null
+  }
 })
 </script>
 

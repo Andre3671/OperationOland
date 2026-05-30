@@ -1,7 +1,7 @@
 <template>
   <div class="compass">
     <div class="compass-shell" :style="rotationStyle">
-      <img src="/compass.svg" alt="compass" />
+      <img src="/compass.svg?v=2" alt="compass" />
     </div>
     <div v-if="showTargetTick" class="target-pointer" :style="targetPointerStyle">
       <div class="target-pointer-tick"></div>

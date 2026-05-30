@@ -61,8 +61,11 @@ function defaultState() {
     chatMessages: [],
     isSimulationMode: false,
     isOperationActive: false,
+    walkingMode: false,
   }
 }
+
+const WALKING_RADIUS_M = 50
 
 function loadState() {
   const row = db.prepare(`SELECT value FROM kv WHERE key = 'state'`).get()
@@ -135,7 +138,8 @@ function calcStatus(state, teamEntry) {
   for (const cp of state.checkpoints) {
     if (cp.team.toLowerCase() !== teamEntry.team.toLowerCase()) continue
     const distM = haversine(latest, cp) * 1000
-    if (distM <= (cp.radius || 500)) return 'Vid Checkpoint'
+    const triggerRadius = state.walkingMode ? WALKING_RADIUS_M : (cp.radius || 500)
+    if (distM <= triggerRadius) return 'Vid Checkpoint'
   }
   if (state.meetingPoint.lat != null) {
     const mDistM = haversine(latest, state.meetingPoint) * 1000
@@ -170,7 +174,7 @@ app.post('/api/admin/patch', requireAdmin, (req, res) => {
     'checkpoints', 'meetingPoint', 'globalStart', 'globalFinish',
     'idealRoadPaths', 'teams', 'teamProgress', 'teamCheating',
     'arrivalLog', 'chatMessages', 'isSimulationMode', 'isOperationActive',
-    'history',
+    'history', 'walkingMode',
   ]
   const next = { ...state }
   for (const key of Object.keys(patch)) {

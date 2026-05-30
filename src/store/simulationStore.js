@@ -58,6 +58,9 @@ const arrivalLog = ref(Array.isArray(cached.arrivalLog) ? cached.arrivalLog : []
 const chatMessages = ref(Array.isArray(cached.chatMessages) ? cached.chatMessages : [])
 const isSimulationMode = ref(cached.isSimulationMode ?? false)
 const isOperationActive = ref(cached.isOperationActive ?? false)
+const walkingMode = ref(cached.walkingMode ?? false)
+
+export const WALKING_RADIUS_M = 50
 const connectionStatus = ref('connecting')
 
 // True while we're applying a snapshot from the server. Suppresses the watch
@@ -80,6 +83,7 @@ function applyState(serverState) {
     chatMessages.value = Array.isArray(serverState.chatMessages) ? serverState.chatMessages : []
     isSimulationMode.value = !!serverState.isSimulationMode
     isOperationActive.value = !!serverState.isOperationActive
+    walkingMode.value = !!serverState.walkingMode
   } finally {
     queueMicrotask(() => { applyingRemote = false })
   }
@@ -126,6 +130,7 @@ makeAdminPatcher('globalFinish', globalFinish)
 makeAdminPatcher('idealRoadPaths', idealRoadPaths)
 makeAdminPatcher('isSimulationMode', isSimulationMode, { debounce: 50 })
 makeAdminPatcher('isOperationActive', isOperationActive, { debounce: 50 })
+makeAdminPatcher('walkingMode', walkingMode, { debounce: 50 })
 
 // ---- store API ----
 
@@ -292,6 +297,7 @@ export function useSimulationStore() {
     chatMessages,
     isSimulationMode,
     isOperationActive,
+    walkingMode,
     connectionStatus,
     setOperationActive,
     updateTeamPosition,

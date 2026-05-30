@@ -1,11 +1,11 @@
 import { ref, onMounted, onUnmounted, watch, toValue } from 'vue'
-import { useSimulationStore } from '../store/simulationStore'
+import { useSimulationStore, WALKING_RADIUS_M } from '../store/simulationStore'
 
 export function useGeofencing(checkpoints, activeIndex, teamNameSource) {
   const isOverlayActive = ref(false)
   const userLocation = ref(null)
   const distanceToTarget = ref(null)
-  const { isSimulationMode, history, updateTeamPosition, recordCheckpointArrival } = useSimulationStore()
+  const { isSimulationMode, walkingMode, history, updateTeamPosition, recordCheckpointArrival } = useSimulationStore()
   let watchId = null
   let triggeredCheckpointKey = null
 
@@ -42,7 +42,8 @@ export function useGeofencing(checkpoints, activeIndex, teamNameSource) {
 
     if (isOverlayActive.value && triggeredCheckpointKey === checkpointKey) return
 
-    if (dist <= (currentCp.radius || 500) && triggeredCheckpointKey !== checkpointKey) {
+    const triggerRadius = walkingMode.value ? WALKING_RADIUS_M : (currentCp.radius || 500)
+    if (dist <= triggerRadius && triggeredCheckpointKey !== checkpointKey) {
       console.log('Geofencing: TARGET REACHED!')
       triggeredCheckpointKey = checkpointKey
       recordCheckpointArrival(toValue(teamNameSource), currentCp, dist)

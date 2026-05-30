@@ -34,6 +34,14 @@
         >
           {{ isSimulationMode ? 'SIM GPS PÅ' : 'SIM GPS' }}
         </button>
+        <button
+          class="header-btn"
+          :class="{ active: walkingMode }"
+          @click="toggleWalkingMode"
+          title="Gång-mode: krymper checkpoint-radius till 50m för att kräva närvaro till fots"
+        >
+          {{ walkingMode ? 'GÅNG PÅ' : 'GÅNG' }}
+        </button>
         <button class="header-btn danger" @click="resetAll" title="Nollställ allt">✕</button>
         <button class="header-btn sidebar-toggle" @click="sidebarOpen = !sidebarOpen" :title="sidebarOpen ? 'Stäng panel' : 'Öppna panel'">
           {{ sidebarOpen ? '▶' : '◀' }}
@@ -389,6 +397,8 @@ const {
   avoidHighways,
   isSimulationMode,
   isOperationActive,
+  walkingMode,
+  toggleWalkingMode,
   toggleOperation,
   resetAll,
   teamProgress,

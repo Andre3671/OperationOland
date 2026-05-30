@@ -484,8 +484,14 @@ export function useAdminTracking() {
       isLoading.value = false
       return
     }
-    const perpX = (-dx / mainDist) * 0.15
-    const perpY = (dy / mainDist) * 0.15
+    // Walking corridors are tiny, so the fixed 0.15° (≈17 km) lateral spread
+    // throws CPs miles off the corridor and ORS then snaps them to unrelated
+    // settlements far from the route. In walking mode keep CPs within ~500 m
+    // of the corridor with a ~150 m jitter regardless of corridor length.
+    const perpScale = walkingMode.value ? 0.005 : 0.15
+    const cpJitter = walkingMode.value ? 0.0015 : 0.05
+    const perpX = (-dx / mainDist) * perpScale
+    const perpY = (dy / mainDist) * perpScale
 
     try {
       // Measure the direct start→finish road distance; per-team cap = × 1.15.
@@ -607,8 +613,8 @@ export function useAdminTracking() {
             let cpAttempts = 0
             while (!geoData && cpAttempts < 20) {
               const progressRatio = 0.1 + (i / (count + 1)) * 0.8
-              const laneLat = start[0] + (dy * progressRatio) + (perpX * offsetMult) + (Math.random() - 0.5) * 0.05
-              const laneLng = start[1] + (dx * progressRatio) + (perpY * offsetMult) + (Math.random() - 0.5) * 0.05
+              const laneLat = start[0] + (dy * progressRatio) + (perpX * offsetMult) + (Math.random() - 0.5) * cpJitter
+              const laneLng = start[1] + (dx * progressRatio) + (perpY * offsetMult) + (Math.random() - 0.5) * cpJitter
               const candidate = await fetchReverse(laneLat, laneLng, true)
               if (candidate && !isForbiddenCity(candidate.name)) geoData = candidate
               cpAttempts++

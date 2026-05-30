@@ -1,4 +1,13 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <defs>
+    <filter id="redGlow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="1.6" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
   <circle cx="50" cy="50" r="46" stroke="#00ff00" stroke-width="1.5" fill="none" opacity="0.55"/>
   <circle cx="50" cy="50" r="38" stroke="#00ff00" stroke-width="0.8" fill="none" opacity="0.25"/>
   <g stroke="#00ff00" stroke-width="1.2" opacity="0.6">
@@ -8,12 +17,12 @@
     <line x1="88" y1="50" x2="96" y2="50"/>
   </g>
   <g transform="translate(50 50)">
-    <polygon points="0,-36 7,0 0,-6 -7,0" fill="#ff3333" stroke="#ff8888" stroke-width="0.5"/>
-    <polygon points="0,36 7,0 0,6 -7,0" fill="#00ff00" opacity="0.65"/>
-    <circle cx="0" cy="0" r="3" fill="#00ff00"/>
+    <polygon points="0,42 6,0 0,4 -6,0" fill="#00ff00" opacity="0.55"/>
+    <polygon points="0,-44 13,0 0,-4 -13,0" fill="#ff1a1a" stroke="#ffffff" stroke-width="0.8" filter="url(#redGlow)"/>
+    <circle cx="0" cy="0" r="3.5" fill="#ff1a1a" stroke="#ffffff" stroke-width="0.6"/>
   </g>
-  <text x="50" y="20" font-size="10" font-weight="bold" fill="#ff3333" text-anchor="middle" font-family="monospace">N</text>
-  <text x="50" y="86" font-size="8" fill="#00ff00" text-anchor="middle" font-family="monospace" opacity="0.7">S</text>
-  <text x="86" y="54" font-size="8" fill="#00ff00" text-anchor="middle" font-family="monospace" opacity="0.7">E</text>
-  <text x="14" y="54" font-size="8" fill="#00ff00" text-anchor="middle" font-family="monospace" opacity="0.7">W</text>
+  <text x="50" y="22" font-size="16" font-weight="bold" fill="#ff1a1a" stroke="#ffffff" stroke-width="0.4" text-anchor="middle" font-family="monospace" filter="url(#redGlow)">N</text>
+  <text x="50" y="84" font-size="7" fill="#00ff00" text-anchor="middle" font-family="monospace" opacity="0.6">S</text>
+  <text x="84" y="53" font-size="7" fill="#00ff00" text-anchor="middle" font-family="monospace" opacity="0.6">E</text>
+  <text x="16" y="53" font-size="7" fill="#00ff00" text-anchor="middle" font-family="monospace" opacity="0.6">W</text>
 </svg>

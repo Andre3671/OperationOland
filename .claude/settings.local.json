@@ -5,7 +5,8 @@
       "Read(//c/Users/babyb/Desktop/Projekt/WeatherCompare/**)",
       "Bash(npx vite *)",
       "Bash(npm install *)",
-      "Bash(node --check src/index.js)"
+      "Bash(node --check src/index.js)",
+      "Bash(node --check src/lib/scoring.js)"
     ]
   }
 }

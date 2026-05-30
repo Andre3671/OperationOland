@@ -33,10 +33,11 @@
       </div>
 
       <div v-else-if="state === 'blocked-android'" class="gate-body">
-        <p class="lead">Chrome blockerar kompassen.</p>
+        <p class="lead">Webbläsaren blockerar kompassen.</p>
         <ol class="steps">
-          <li>Tryck på <b>låsikonen</b> till vänster om adressen.</li>
-          <li>Välj <b>Behörigheter</b>.</li>
+          <li>Tryck på de <b>3 punkterna</b> .</li>
+          <li>Välj <b>Inställningar</b>.</li>
+          <li>Välj <b>Webbplatsinställningar</b>.</li>
           <li>Slå på <b>Rörelsesensorer</b>.</li>
           <li>Tryck <b>LADDA OM</b> nedan.</li>
         </ol>

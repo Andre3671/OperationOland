@@ -7,6 +7,7 @@
       <div class="target-pointer-tick"></div>
     </div>
     <div class="heading-label">{{ headingLabel }}</div>
+    <div v-if="showDebug" class="compass-debug">{{ debugLine }}</div>
   </div>
 </template>
 
@@ -25,6 +26,30 @@ const hasReading = ref(false)
 let absoluteListener = null
 let fallbackListener = null
 let usingAbsolute = false
+
+// Temporary instrumentation: when the compass is stuck without a reading we
+// surface why on-device — easier than remote-debugging Chrome on Android.
+const absCount = ref(0)
+const relCount = ref(0)
+const lastAlpha = ref(null)
+const lastAbsAlpha = ref(null)
+const lastWebkit = ref(null)
+const permState = ref('n/a')
+const secureCtx = ref(typeof window !== 'undefined' ? window.isSecureContext : false)
+const hasOrientationApi = ref(typeof window !== 'undefined' && typeof window.DeviceOrientationEvent !== 'undefined')
+const showDebug = computed(() => !hasReading.value || unsupported.value)
+const debugLine = computed(() => {
+  const parts = []
+  parts.push(`abs:${absCount.value}`)
+  parts.push(`rel:${relCount.value}`)
+  if (lastAbsAlpha.value != null) parts.push(`aA:${Math.round(lastAbsAlpha.value)}`)
+  if (lastAlpha.value != null) parts.push(`a:${Math.round(lastAlpha.value)}`)
+  if (lastWebkit.value != null) parts.push(`wk:${Math.round(lastWebkit.value)}`)
+  if (!secureCtx.value) parts.push('!https')
+  if (!hasOrientationApi.value) parts.push('!api')
+  if (permState.value !== 'n/a') parts.push(`p:${permState.value}`)
+  return parts.join(' ')
+})
 
 const rotationStyle = computed(() => ({ transform: `rotate(${-heading.value}deg)` }))
 const headingLabel = computed(() => {
@@ -82,6 +107,9 @@ function readHeading(event) {
 }
 
 function handleAbsolute(event) {
+  absCount.value += 1
+  if (typeof event.alpha === 'number') lastAbsAlpha.value = event.alpha
+  if (typeof event.webkitCompassHeading === 'number') lastWebkit.value = event.webkitCompassHeading
   const h = readHeading(event)
   if (h == null) return
   usingAbsolute = true
@@ -90,6 +118,9 @@ function handleAbsolute(event) {
 }
 
 function handleFallback(event) {
+  relCount.value += 1
+  if (typeof event.alpha === 'number') lastAlpha.value = event.alpha
+  if (typeof event.webkitCompassHeading === 'number') lastWebkit.value = event.webkitCompassHeading
   // Skip non-absolute updates once the absolute sensor is delivering, otherwise
   // the two streams fight and the needle freezes on the last "absolute" sample.
   if (usingAbsolute) return
@@ -106,11 +137,13 @@ async function startCompass() {
   if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
     try {
       const permission = await DeviceOrientationEvent.requestPermission()
+      permState.value = permission
       if (permission !== 'granted') {
         unsupported.value = true
         return
       }
     } catch (err) {
+      permState.value = 'err'
       // Likely "not a user gesture" — events may still fire if a prior gesture
       // already granted permission; keep listening rather than giving up.
     }
@@ -152,5 +185,19 @@ onBeforeUnmount(() => {
   border-right: 8px solid transparent;
   border-bottom: 14px solid var(--target-color, #ffcc00);
   filter: drop-shadow(0 0 6px var(--target-color, #ffcc00));
+}
+
+.compass-debug {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  margin-top: 2px;
+  font-size: 8px;
+  font-family: 'JetBrains Mono', monospace;
+  color: #ff8800;
+  letter-spacing: 0.05em;
+  white-space: nowrap;
+  text-shadow: 0 0 4px rgba(0, 0, 0, 0.9);
+  pointer-events: none;
 }
 </style>

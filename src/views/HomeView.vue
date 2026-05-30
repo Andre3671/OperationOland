@@ -56,6 +56,12 @@
 
     <WelcomeScreen v-else-if="!teamReady && !welcomed" @accept="welcomed = true" />
 
+    <SensorPermissionGate
+      v-else-if="!teamReady && !sensorsReady"
+      @ready="sensorsReady = true"
+      @skip="sensorsReady = true"
+    />
+
     <TeamPicker v-else-if="!teamReady" @select="selectTeam" class="team-picker" />
 
     <RedLockOverlay v-if="locked" :seconds="penaltySeconds" :stats="currentCheatingStats" />
@@ -114,6 +120,7 @@ import RedLockOverlay from '../components/RedLockOverlay.vue'
 import CheckpointOverlay from '../components/CheckpointOverlay.vue'
 import TeamPicker from '../components/TeamPicker.vue'
 import WelcomeScreen from '../components/WelcomeScreen.vue'
+import SensorPermissionGate from '../components/SensorPermissionGate.vue'
 import { useAntiCheat } from '../composables/useAntiCheat'
 import { useTeamCheckpoints } from '../composables/useTeamCheckpoints'
 import { useGeofencing } from '../composables/useGeofencing'
@@ -143,6 +150,7 @@ const teamColor = computed(() => colorForTeam(teamName.value))
 
 const editableTeamName = ref('')
 const welcomed = ref(false)
+const sensorsReady = ref(false)
 const chatOpen = ref(false)
 const teamChatDraft = ref('')
 

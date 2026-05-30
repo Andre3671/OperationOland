@@ -7,6 +7,13 @@
       <div class="target-pointer-tick"></div>
     </div>
     <div class="heading-label">{{ headingLabel }}</div>
+    <button v-if="sensorsBlocked" class="compass-hint" @click="showHelp = !showHelp">
+      Aktivera rörelsesensorer
+    </button>
+    <div v-if="sensorsBlocked && showHelp" class="compass-help">
+      Chrome blockerar kompassen. Tryck på låsikonen vid adressen →
+      Behörigheter → tillåt <b>Rörelsesensorer</b>, ladda sedan om sidan.
+    </div>
     <div v-if="showDebug" class="compass-debug">{{ debugLine }}</div>
   </div>
 </template>
@@ -43,6 +50,12 @@ const secureCtx = ref(typeof window !== 'undefined' ? window.isSecureContext : f
 const hasOrientationApi = ref(typeof window !== 'undefined' && typeof window.DeviceOrientationEvent !== 'undefined')
 const hasSensorApi = ref(typeof window !== 'undefined' && typeof window.AbsoluteOrientationSensor !== 'undefined')
 const showDebug = computed(() => !hasReading.value || unsupported.value)
+const showHelp = ref(false)
+// Treat the Generic Sensor API permission as the authoritative signal: on
+// modern Chrome the same site setting gates both the sensor API and the
+// legacy deviceorientation events, so "denied" here means the compass cannot
+// work until the user flips the toggle in Chrome site settings.
+const sensorsBlocked = computed(() => sensorState.value === 'denied' && !hasReading.value)
 const debugLine = computed(() => {
   const parts = []
   parts.push(`abs:${absCount.value}`)
@@ -267,5 +280,45 @@ onBeforeUnmount(() => {
   white-space: nowrap;
   text-shadow: 0 0 4px rgba(0, 0, 0, 0.9);
   pointer-events: none;
+}
+
+.compass-hint {
+  position: absolute;
+  top: calc(100% + 14px);
+  right: 0;
+  background: rgba(255, 51, 51, 0.15);
+  border: 1px solid #ff3333;
+  color: #ff6666;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 4px 6px;
+  border-radius: 2px;
+  white-space: nowrap;
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+.compass-help {
+  position: absolute;
+  top: calc(100% + 44px);
+  right: 0;
+  width: 220px;
+  background: rgba(0, 0, 0, 0.92);
+  border: 1px solid #ff3333;
+  color: #eee;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  line-height: 1.4;
+  padding: 8px;
+  border-radius: 3px;
+  pointer-events: auto;
+  z-index: 5;
+}
+
+.compass-help b {
+  color: #ffcc00;
 }
 </style>

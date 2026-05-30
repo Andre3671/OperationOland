@@ -90,6 +90,37 @@
       </div>
 
       <div class="meeting-section">
+        <div class="section-title">POÄNGLIGA</div>
+        <div class="scoring-info">
+          <div v-if="leaderboard.length === 0" class="log-empty">Inga lag ännu.</div>
+          <div v-else class="scoreboard">
+            <div v-for="(row, idx) in leaderboard" :key="row.team" class="score-row" :style="{ '--team-color': row.color }">
+              <div class="score-rank">{{ idx + 1 }}</div>
+              <div class="score-body">
+                <div class="score-head">
+                  <span class="score-name" :style="{ color: row.color }">{{ row.displayName }}</span>
+                  <span class="score-total">{{ row.total }} p</span>
+                </div>
+                <div class="score-progress">
+                  CP {{ row.completed }}/{{ row.totalCheckpoints }} · {{ row.arrivals }} ankomster · {{ row.totalMinutes }} min
+                </div>
+                <div class="score-breakdown">
+                  <span class="bd-pos">+{{ row.breakdown.arrival }}</span><span class="bd-label">ankomst</span>
+                  <span class="bd-pos">+{{ row.breakdown.missionComplete }}</span><span class="bd-label">uppdrag</span>
+                  <span class="bd-pos">+{{ row.breakdown.meetingBonus }}</span><span class="bd-label">återsamling</span>
+                  <span class="bd-neg">{{ row.breakdown.timePenalty }}</span><span class="bd-label">tid</span>
+                  <span class="bd-neg">{{ row.breakdown.cheatPenalty }}</span><span class="bd-label">fusk</span>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="scoring-legend">
+            +{{ SCORING.arrival }} ankomst · +{{ SCORING.missionComplete }} uppdrag slutfört · +{{ SCORING.meetingBonus }} gemensamt (återsamling) · −{{ SCORING.timePerMinute }} / min · −{{ SCORING.cheatOffense }} per fusk + −{{ SCORING.cheatPer30s }} / 30s
+          </div>
+        </div>
+      </div>
+
+      <div class="meeting-section">
         <div class="section-title">TEAM-CHATT</div>
         <div class="chat-box">
           <div class="chat-log">
@@ -328,6 +359,7 @@ import { ref, computed, onMounted, watch } from 'vue'
 import AdminMap from '../components/AdminMap.vue'
 import { useAdminTracking } from '../composables/useAdminTracking'
 import { SLOT_DEFS, MAX_TEAMS } from '../lib/teamSlots'
+import { computeLeaderboard, SCORING } from '../lib/scoring'
 
 const {
   teamSummaries,
@@ -366,6 +398,14 @@ const {
   chatMessages,
   sendChatMessage,
 } = useAdminTracking()
+
+const leaderboard = computed(() => computeLeaderboard({
+  teams: teams.value,
+  checkpoints: checkpoints.value,
+  teamProgress: teamProgress.value,
+  teamCheating: teamCheating.value,
+  arrivalLog: arrivalLog.value,
+}))
 
 const ready = ref(false)
 const sidebarOpen = ref(true)
@@ -1414,5 +1454,97 @@ const toggleSharedSimulation = () => {
 
 @keyframes spin {
   to { transform: rotate(360deg); }
+}
+
+.scoring-info {
+  background: #1a1a1a;
+  padding: 12px;
+  border-radius: 4px;
+}
+
+.scoreboard {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.score-row {
+  display: flex;
+  gap: 10px;
+  background: #111;
+  border: 1px solid #2a2a2a;
+  border-left: 3px solid var(--team-color, #444);
+  border-radius: 4px;
+  padding: 10px;
+}
+
+.score-rank {
+  flex: 0 0 22px;
+  font-size: 1.1rem;
+  font-weight: 800;
+  color: #666;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.score-row:first-child .score-rank {
+  color: #ffcc00;
+  text-shadow: 0 0 8px rgba(255, 204, 0, 0.55);
+}
+
+.score-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.score-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.score-name {
+  font-weight: 700;
+  font-size: 0.85rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.score-total {
+  font-weight: 800;
+  font-size: 1rem;
+  color: #eee;
+  font-variant-numeric: tabular-nums;
+}
+
+.score-progress {
+  color: #888;
+  font-size: 0.68rem;
+  letter-spacing: 0.04em;
+  margin-bottom: 6px;
+}
+
+.score-breakdown {
+  display: grid;
+  grid-template-columns: auto 1fr auto 1fr auto 1fr;
+  gap: 2px 6px;
+  font-size: 0.68rem;
+  align-items: baseline;
+}
+
+.bd-pos { color: #00ff88; font-weight: 700; font-variant-numeric: tabular-nums; }
+.bd-neg { color: #ff6666; font-weight: 700; font-variant-numeric: tabular-nums; }
+.bd-label { color: #777; text-transform: uppercase; letter-spacing: 0.05em; }
+
+.scoring-legend {
+  color: #555;
+  font-size: 0.62rem;
+  line-height: 1.5;
+  letter-spacing: 0.03em;
+  padding-top: 8px;
+  border-top: 1px solid #222;
 }
 </style>

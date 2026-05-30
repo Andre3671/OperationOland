@@ -28,6 +28,9 @@ $UnraidHost     = "root@192.168.0.6"
 $RemotePath     = "/mnt/user/appdata/operationoland"
 $ContainerName  = "operationoland"
 $SyncContainer  = "operationoland-sync"
+$SpaImage       = "operationoland:latest"
+$SyncImage      = "operationoland-sync:latest"
+$SyncVolume     = "operationoland_sync-data"
 $Network        = "authentik_network"
 $HostPort       = "8091"
 # ----------------------------------------------------------------------------
@@ -134,27 +137,62 @@ try {
     Pop-Location
 }
 
-# --- 4. Bring up the stack via docker compose -------------------------------
-# Two services: the nginx SPA container and the Node sync server. The compose
-# file reads VITE_ORS_API_KEY and ADMIN_TOKEN from the shell env on the
-# remote host, so we prefix the command with them.
-$composeEnv = ""
-if ($OrsKey)     { $composeEnv += "VITE_ORS_API_KEY='$OrsKey' " }
-if ($AdminToken) { $composeEnv += "ADMIN_TOKEN='$AdminToken' " }
+# --- 4. Build + run on Unraid -----------------------------------------------
+# Two containers: the nginx SPA and the Node sync server. We use plain
+# `docker run` rather than `docker compose` because the Compose CLI plugin
+# isn't installed on the Unraid host. The docker-compose.yml in the repo
+# is kept around for local development only.
 
-Step "Stopping current stack (if any)"
-Invoke-Ssh "cd $RemotePath && (docker compose down 2>/dev/null; true)"
+Step "Stopping current containers (if any)"
+Invoke-Ssh "docker stop $ContainerName 2>/dev/null; docker rm $ContainerName 2>/dev/null; true"
+Invoke-Ssh "docker stop $SyncContainer 2>/dev/null; docker rm $SyncContainer 2>/dev/null; true"
 Ok "stopped"
 
+Step "Ensuring sync data volume exists"
+Invoke-Ssh "docker volume inspect $SyncVolume >/dev/null 2>&1 || docker volume create $SyncVolume"
+Ok "volume ready"
+
 if (-not $SkipBuild) {
-    Step "Building + starting stack on Unraid (2-4 min)"
-    Invoke-Ssh "cd $RemotePath && ${composeEnv}docker compose up -d --build"
-    Ok "stack up"
+    Step "Building sync image on Unraid"
+    Invoke-Ssh "cd $RemotePath && docker build -t $SyncImage ./server"
+    Ok "sync image built"
+
+    Step "Building SPA image on Unraid (2-4 min)"
+    $buildArg = if ($OrsKey) { "--build-arg VITE_ORS_API_KEY=$OrsKey" } else { "" }
+    Invoke-Ssh "cd $RemotePath && docker build $buildArg -t $SpaImage ."
+    Ok "SPA image built"
 } else {
     Warn "skipping build (SkipBuild)"
-    Invoke-Ssh "cd $RemotePath && ${composeEnv}docker compose up -d"
-    Ok "stack started (no rebuild)"
 }
+
+Step "Starting sync container"
+$syncEnv = ""
+if ($AdminToken) { $syncEnv = "-e ADMIN_TOKEN='$AdminToken'" }
+$syncRun = @"
+docker run -d \
+  --name $SyncContainer \
+  --restart unless-stopped \
+  --network $Network \
+  -e PORT=8090 \
+  -e DB_PATH=/app/data/state.db \
+  $syncEnv \
+  -v ${SyncVolume}:/app/data \
+  $SyncImage
+"@
+Invoke-Ssh $syncRun
+Ok "sync container started"
+
+Step "Starting SPA container"
+$spaRun = @"
+docker run -d \
+  --name $ContainerName \
+  --restart unless-stopped \
+  --network $Network \
+  -p ${HostPort}:80 \
+  $SpaImage
+"@
+Invoke-Ssh $spaRun
+Ok "SPA container started"
 
 Start-Sleep -Seconds 3
 

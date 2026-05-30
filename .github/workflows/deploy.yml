@@ -1,7 +1,7 @@
 name: Deploy
 
 # Runs on the self-hosted Unraid runner (same one used by WeatherCompare) so
-# we can build the Docker image and restart the container without external
+# we can build the Docker images and restart the containers without external
 # services.
 #
 # Triggers:
@@ -34,8 +34,11 @@ jobs:
     timeout-minutes: 15
 
     env:
-      CONTAINER_NAME: operationoland
+      SPA_CONTAINER: operationoland
       SYNC_CONTAINER: operationoland-sync
+      SPA_IMAGE: operationoland:latest
+      SYNC_IMAGE: operationoland-sync:latest
+      SYNC_VOLUME: operationoland_sync-data
       NETWORK: authentik_network
       HOST_PORT: "8091"
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
@@ -44,14 +47,45 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Bring down existing stack
-        run: docker compose down 2>/dev/null || true
+      - name: Stop existing containers
+        run: |
+          docker stop "$SPA_CONTAINER"  2>/dev/null || true
+          docker rm   "$SPA_CONTAINER"  2>/dev/null || true
+          docker stop "$SYNC_CONTAINER" 2>/dev/null || true
+          docker rm   "$SYNC_CONTAINER" 2>/dev/null || true
 
-      - name: Build and start stack
-        env:
-          VITE_ORS_API_KEY: ${{ secrets.VITE_ORS_API_KEY }}
-          ADMIN_TOKEN: ${{ secrets.ADMIN_TOKEN }}
-        run: docker compose up -d --build
+      - name: Ensure sync data volume exists
+        run: docker volume inspect "$SYNC_VOLUME" >/dev/null 2>&1 || docker volume create "$SYNC_VOLUME"
+
+      - name: Build sync image
+        run: docker build -t "$SYNC_IMAGE" ./server
+
+      - name: Build SPA image
+        run: |
+          docker build \
+            --build-arg VITE_ORS_API_KEY="${{ secrets.VITE_ORS_API_KEY }}" \
+            -t "$SPA_IMAGE" .
+
+      - name: Start sync container
+        run: |
+          docker run -d \
+            --name "$SYNC_CONTAINER" \
+            --restart unless-stopped \
+            --network "$NETWORK" \
+            -e ADMIN_TOKEN="${{ secrets.ADMIN_TOKEN }}" \
+            -e PORT=8090 \
+            -e DB_PATH=/app/data/state.db \
+            -v "$SYNC_VOLUME":/app/data \
+            "$SYNC_IMAGE"
+
+      - name: Start SPA container
+        run: |
+          docker run -d \
+            --name "$SPA_CONTAINER" \
+            --restart unless-stopped \
+            --network "$NETWORK" \
+            -p "$HOST_PORT":80 \
+            "$SPA_IMAGE"
 
       - name: Wait for the SPA to bind
         run: |
@@ -63,7 +97,7 @@ jobs:
             sleep 1
           done
           echo "::error::Server did not respond on port $HOST_PORT within 30s"
-          docker logs "$CONTAINER_NAME" --tail 100
+          docker logs "$SPA_CONTAINER"  --tail 100
           docker logs "$SYNC_CONTAINER" --tail 100
           exit 1
 
@@ -82,7 +116,7 @@ jobs:
           done
           if [[ $fail -ne 0 ]]; then
             echo "::error::One or more smoke tests failed"
-            docker logs "$CONTAINER_NAME" --tail 100
+            docker logs "$SPA_CONTAINER"  --tail 100
             docker logs "$SYNC_CONTAINER" --tail 100
             exit 1
           fi

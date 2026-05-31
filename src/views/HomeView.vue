@@ -131,6 +131,7 @@
           <span v-if="activeCheckpoint?.region" class="region-tag">{{ activeCheckpoint.region }}</span>
           <span class="distance-tag">{{ distanceLabel }}</span>
           <span v-if="etaLabel" class="eta-tag">⏱ {{ etaLabel }}</span>
+          <span v-if="targetClock" class="clock-tag">🕒 {{ targetClock }}</span>
         </span>
       </div>
       <div class="debug-row" v-if="isOverlayActive">
@@ -219,6 +220,14 @@ const distanceLabel = computed(() => {
   if (d < 950) return `${Math.round(d)} m`
   if (d < 10_000) return `${(d / 1000).toFixed(2)} km`
   return `${(d / 1000).toFixed(1)} km`
+})
+
+const targetClock = computed(() => {
+  const iso = activeCheckpoint.value?.arriveAt
+  if (!iso) return ''
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return ''
+  return d.toLocaleTimeString('sv-SE', { hour: '2-digit', minute: '2-digit' })
 })
 
 // Live ETA from current GPS to the active target. Straight-line distance with
@@ -557,6 +566,13 @@ function sendTeamChat() {
 
 .eta-tag {
   color: #00ccff;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  margin-left: 8px;
+}
+
+.clock-tag {
+  color: #ffcc00;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
   margin-left: 8px;

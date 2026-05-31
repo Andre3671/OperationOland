@@ -1083,12 +1083,11 @@ const toggleSharedSimulation = () => {
 
 .cp-name {
   color: #eee;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 6px;
+  min-width: 0;
 }
 
 .cp-pos {
@@ -1133,7 +1132,9 @@ const toggleSharedSimulation = () => {
   font-size: 0.7rem;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
-  margin-left: 6px;
+  margin-left: auto;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .cp-edit-city-row {
@@ -1648,10 +1649,15 @@ const toggleSharedSimulation = () => {
 
 .score-breakdown {
   display: grid;
-  grid-template-columns: auto 1fr auto 1fr auto 1fr;
-  gap: 2px 6px;
-  font-size: 0.68rem;
+  grid-template-columns: auto 1fr auto 1fr;
+  gap: 4px 8px;
+  font-size: 0.65rem;
   align-items: baseline;
+}
+
+.bd-label {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .bd-pos { color: #00ff88; font-weight: 700; font-variant-numeric: tabular-nums; }

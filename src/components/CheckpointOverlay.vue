@@ -64,6 +64,7 @@
           <div class="alert-icon">⏸️</div>
           <h1 class="mission-status">ETAPP SLUTFÖRD</h1>
           <h2 class="mission-title">ÅTERSAMLING</h2>
+          <div v-if="arriveClock" class="cp-arrive-clock">🕒 Planerad tid: {{ arriveClock }}</div>
           <div class="mission-divider"></div>
           <p class="mission-challenge">{{ checkpoint.challenge }}</p>
 
@@ -125,6 +126,14 @@ const taskName = computed(() => {
 const cityLine = computed(() => {
   const cp = props.checkpoint || {}
   return cp.city || ''
+})
+
+const arriveClock = computed(() => {
+  const iso = props.checkpoint?.arriveAt
+  if (!iso) return ''
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return ''
+  return d.toLocaleTimeString('sv-SE', { hour: '2-digit', minute: '2-digit' })
 })
 
 const overlayTheme = computed(() => {
@@ -286,6 +295,17 @@ onUnmounted(() => {
   font-weight: 900;
   margin-bottom: 20px;
   text-transform: uppercase;
+}
+
+.cp-arrive-clock {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.85rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  color: #ffcc00;
+  margin-top: -12px;
+  margin-bottom: 16px;
+  font-variant-numeric: tabular-nums;
 }
 
 .mission-city {

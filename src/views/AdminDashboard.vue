@@ -189,18 +189,16 @@
               <label for="avoid-highways" style="font-size: 0.8rem; cursor: pointer; color: #ccc;">Undvik motorvägar</label>
             </div>
 
-            <div class="gen-grid gen-grid-3">
+            <div class="gen-grid">
               <label class="gen-label">Antal lag
                 <input v-model.number="genTeamCount" class="checkpoint-input" type="number" :min="1" :max="MAX_TEAMS" />
               </label>
-              <label class="gen-label">Antal CPs / lag
-                <input v-model.number="genCheckpointCount" class="checkpoint-input" type="number" min="1" max="10" />
-              </label>
-              <label class="gen-label">Gemensamma uppdrag
-                <input v-model.number="genSharedTaskCount" class="checkpoint-input" type="number" min="0" :max="genCheckpointCount" />
-              </label>
             </div>
-            <div class="gen-hint">Max längd: idealrutt start → mål + 15 %</div>
+            <div class="gen-hint">
+              Antal CPs sätts automatiskt (max 30 min mellan CPs) och ~1/3 blir gemensamma.<br />
+              Max längd: idealrutt start → mål + 15 %.
+              <span v-if="operationStartTime || meetingPointTime"><br />Tider stämplas på CPs utifrån starttid<span v-if="meetingPointTime"> + mötestid</span>.</span>
+            </div>
 
             <div class="slot-name-list">
               <div class="slot-name-row" v-for="(spec, i) in genSlotSpecs" :key="i">
@@ -273,6 +271,7 @@
                     {{ cp.name || cp.title }}
                     <span v-if="cp.city" class="cp-city">📍 {{ cp.city }}</span>
                     <span v-if="cp.region" class="cp-region">{{ cp.region }}</span>
+                    <span v-if="cp.arriveAt" class="cp-arrive">🕒 {{ formatClock(cp.arriveAt) }}</span>
                   </div>
                   <div class="cp-challenge" v-if="cp.challenge">{{ cp.challenge }}</div>
                   <div class="cp-time" v-if="idx < group.items.length - 1" :class="{ 'time-unset': cp.timeToNext === 0 }">
@@ -316,6 +315,16 @@
             </button>
           </div>
           <div v-if="startError" class="status-warn">{{ startError }}</div>
+          <div class="time-row">
+            <label class="time-label">Starttid</label>
+            <input
+              type="datetime-local"
+              class="checkpoint-input time-input"
+              :value="startTimeInput"
+              @change="onStartTimeChange"
+            />
+            <button v-if="operationStartTime" class="time-clear" @click="operationStartTime = null" title="Rensa">×</button>
+          </div>
         </div>
       </div>
 
@@ -331,6 +340,16 @@
             <span class="point-coords">{{ meetingPoint.lat.toFixed(4) }}, {{ meetingPoint.lng.toFixed(4) }}</span>
           </div>
           <div v-else class="status-warn">Sätts automatiskt när rutter genereras.</div>
+          <div class="time-row">
+            <label class="time-label">Mötestid</label>
+            <input
+              type="datetime-local"
+              class="checkpoint-input time-input"
+              :value="meetingTimeInput"
+              @change="onMeetingTimeChange"
+            />
+            <button v-if="meetingPointTime" class="time-clear" @click="meetingPointTime = null" title="Rensa">×</button>
+          </div>
         </div>
       </div>
 
@@ -402,6 +421,8 @@ const {
   isOperationActive,
   walkingMode,
   toggleWalkingMode,
+  operationStartTime,
+  meetingPointTime,
   toggleOperation,
   resetAll,
   teamProgress,
@@ -434,6 +455,28 @@ const finishSearching = ref(false)
 const startError = ref('')
 const finishError = ref('')
 const adminChatDraft = ref('')
+
+// datetime-local expects "YYYY-MM-DDTHH:mm" in local time; the store keeps an
+// ISO string in UTC, so we convert in both directions.
+function isoToLocalInput(iso) {
+  if (!iso) return ''
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return ''
+  const pad = (n) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
+
+function localInputToIso(value) {
+  if (!value) return null
+  const d = new Date(value)
+  return Number.isNaN(d.getTime()) ? null : d.toISOString()
+}
+
+const startTimeInput = computed(() => isoToLocalInput(operationStartTime.value))
+const meetingTimeInput = computed(() => isoToLocalInput(meetingPointTime.value))
+
+function onStartTimeChange(e) { operationStartTime.value = localInputToIso(e.target.value) }
+function onMeetingTimeChange(e) { meetingPointTime.value = localInputToIso(e.target.value) }
 
 async function handleStartSearch() {
   if (!startQuery.value.trim()) return
@@ -566,12 +609,19 @@ const statusClass = (status) => {
 }
 
 const handleGenerateRoutes = () => {
-  generateRoutes(genCheckpointCount.value, genSlotSpecs.value.map(s => ({ name: s.name })), genSharedTaskCount.value)
+  generateRoutes('auto', genSlotSpecs.value.map(s => ({ name: s.name })))
 }
 
 const formatTime = (timestamp) => {
   if (!timestamp) return '--:--'
   return new Date(timestamp).toLocaleTimeString('sv-SE', { hour: '2-digit', minute: '2-digit' })
+}
+
+const formatClock = (iso) => {
+  if (!iso) return ''
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return ''
+  return d.toLocaleTimeString('sv-SE', { hour: '2-digit', minute: '2-digit' })
 }
 
 function sendAdminChat() {
@@ -1078,6 +1128,14 @@ const toggleSharedSimulation = () => {
   margin-left: 4px;
 }
 
+.cp-arrive {
+  color: #ffcc00;
+  font-size: 0.7rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  margin-left: 6px;
+}
+
 .cp-edit-city-row {
   display: flex;
   align-items: center;
@@ -1272,6 +1330,43 @@ const toggleSharedSimulation = () => {
 
 .search-row .checkpoint-input {
   flex: 1;
+}
+
+.time-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.time-label {
+  font-size: 0.7rem;
+  color: #888;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  width: 70px;
+}
+
+.time-input {
+  flex: 1;
+  color-scheme: dark;
+}
+
+.time-clear {
+  background: transparent;
+  border: 1px solid #444;
+  color: #888;
+  width: 26px;
+  height: 26px;
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+  padding: 0;
+}
+
+.time-clear:hover {
+  border-color: #ff6666;
+  color: #ff6666;
 }
 
 .gen-label {

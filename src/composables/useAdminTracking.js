@@ -125,6 +125,42 @@ function applySegmentMinutes(startCheckpoint, checkpointsBuffer, segmentMinutes)
   }
 }
 
+// Pin meeting checkpoints to meetingPointTime by padding the segment leading
+// into them, then stamp absolute arriveAt ISO strings on every checkpoint so
+// teams (and the HUD) can show clock times instead of relative minutes.
+function applyArrivalTimes(generatedTeams, startIso, meetingIso) {
+  if (!startIso) return
+  const startMs = Date.parse(startIso)
+  if (!Number.isFinite(startMs)) return
+  const meetingMs = meetingIso ? Date.parse(meetingIso) : null
+
+  if (Number.isFinite(meetingMs)) {
+    for (const entry of generatedTeams) {
+      const meetingIdx = entry.checkpoints.findIndex(cp => cp.type === 'meeting')
+      if (meetingIdx === -1) continue
+      const natural = sumMinutes(entry.segmentMinutes, meetingIdx)
+      const targetMinutes = (meetingMs - startMs) / 60000
+      const slack = targetMinutes - natural
+      if (slack > 0) {
+        entry.segmentMinutes[meetingIdx] = (entry.segmentMinutes[meetingIdx] || 0) + slack
+      } else if (slack < -1) {
+        console.warn(`[Routing] ${entry.team}: natural arrival at meeting is ${Math.round(natural)} min, but only ${Math.round(targetMinutes)} min available — leaving as-is.`)
+      }
+    }
+  }
+
+  for (const entry of generatedTeams) {
+    let cumulative = startMs
+    entry.startCheckpoint.arriveAt = new Date(cumulative).toISOString()
+    for (let i = 0; i < entry.checkpoints.length; i++) {
+      cumulative += (entry.segmentMinutes[i] || 0) * 60000
+      entry.checkpoints[i].arriveAt = new Date(cumulative).toISOString()
+    }
+    cumulative += (entry.segmentMinutes[entry.checkpoints.length] || 0) * 60000
+    entry.finishCheckpoint.arriveAt = new Date(cumulative).toISOString()
+  }
+}
+
 export function useAdminTracking() {
   const store = useSimulationStore()
   const { 
@@ -139,6 +175,8 @@ export function useAdminTracking() {
     isOperationActive,
     setOperationActive,
     walkingMode,
+    operationStartTime,
+    meetingPointTime,
     idealRoadPaths,
     teamProgress,
     teams,
@@ -439,6 +477,7 @@ export function useAdminTracking() {
       if (!feature || !feature.geometry || !Array.isArray(feature.geometry.coordinates)) return validPoints
       const coords = feature.geometry.coordinates.map(c => [c[1], c[0]])
       coords.distanceMeters = feature.properties && feature.properties.summary && feature.properties.summary.distance
+      coords.durationSeconds = feature.properties && feature.properties.summary && feature.properties.summary.duration
       coords.segments = feature.properties && feature.properties.segments ? feature.properties.segments : []
       return coords
     } catch (e) {
@@ -452,9 +491,12 @@ export function useAdminTracking() {
       error.value = "Startpunkt och Mållinje måste anges innan generering."
       return
     }
-    const count = parseInt(numCheckpointsCount)
-    if (isNaN(count) || count < 1) return
-    const sharedTaskCount = Math.max(0, Math.min(parseInt(sharedTaskCountInput) || 0, count))
+    // numCheckpointsCount === 'auto' → derive from the ideal-route duration so
+    // that no segment exceeds 30 min. Otherwise treat as explicit override.
+    const autoCount = numCheckpointsCount === 'auto' || numCheckpointsCount == null
+    let count = autoCount ? null : parseInt(numCheckpointsCount)
+    if (!autoCount && (isNaN(count) || count < 1)) return
+    let sharedTaskCount = autoCount ? null : Math.max(0, Math.min(parseInt(sharedTaskCountInput) || 0, count))
     if (!Array.isArray(slotSpecs) || slotSpecs.length < 1) {
       error.value = "Minst ett lag krävs."
       return
@@ -504,6 +546,22 @@ export function useAdminTracking() {
         console.log(`[Routing] Ideal direct route: ${idealKm} km → max per team: ${capKm} km (+15%)`)
       } else {
         console.warn('[Routing] Could not measure ideal route; per-team distance cap disabled.')
+      }
+
+      // Auto-pick checkpoint counts so no segment exceeds MAX_SEGMENT_MINUTES.
+      // Total segments along the journey = count + 2 (start→cp1 … cpN→finish,
+      // plus the meeting injection). count ≥ MAX(1, ceil(total/30) - 2).
+      if (autoCount) {
+        const MAX_SEGMENT_MINUTES = 30
+        const kmh = walkingMode.value ? ESTIMATED_WALKING_KMH : ESTIMATED_DRIVING_KMH
+        const factor = walkingMode.value ? WALKING_DISTANCE_FACTOR : ROAD_DISTANCE_FACTOR
+        const orsSeconds = idealRoute && idealRoute.durationSeconds
+        const totalMinutes = Number.isFinite(orsSeconds) && orsSeconds > 0
+          ? orsSeconds / 60
+          : ((idealRoute?.distanceMeters || haversineDistance(start, end) * 1000 * factor) / 1000) / kmh * 60
+        count = Math.max(1, Math.ceil(totalMinutes / MAX_SEGMENT_MINUTES) - 2)
+        sharedTaskCount = Math.max(0, Math.min(count, Math.round(count / 3)))
+        console.log(`[Routing] Auto: total ≈ ${Math.round(totalMinutes)} min → ${count} CPs (${sharedTaskCount} gemensamma)`)
       }
       await new Promise(r => setTimeout(r, 500))
 
@@ -699,6 +757,7 @@ export function useAdminTracking() {
       }
 
       synchronizeSharedArrivalTimes(generatedTeams)
+      applyArrivalTimes(generatedTeams, operationStartTime.value, meetingPointTime.value)
       for (const generated of generatedTeams) {
         applySegmentMinutes(generated.startCheckpoint, generated.checkpoints, generated.segmentMinutes)
         checkpoints.value.push(generated.startCheckpoint)
@@ -862,5 +921,5 @@ export function useAdminTracking() {
     if (intervalId) { clearInterval(intervalId); intervalId = null }
   })
 
-  return { activeIdealRoutes, actualRoutes, livePoints, teamSummaries, isLoading, genProgress, error, refresh, debugMode: isSimulationMode, debugPositions, toggleDebug, toggleOperation, updateTeamPosition, snapToIdeal, moveTeamCheckpoint, checkpoints, meetingPoint, globalStart, globalFinish, updateGlobalStart, updateGlobalFinish, setStartByName, setFinishByName, moveStartTo, moveFinishTo, removeCheckpoint, updateCheckpoint, updateMeetingPoint, generateRoutes, avoidHighways, isSimulationMode, isOperationActive, walkingMode, toggleWalkingMode, teamProgress, teams, teamCheating, arrivalLog, chatMessages, sendChatMessage, releaseSlot, resetAll }
+  return { activeIdealRoutes, actualRoutes, livePoints, teamSummaries, isLoading, genProgress, error, refresh, debugMode: isSimulationMode, debugPositions, toggleDebug, toggleOperation, updateTeamPosition, snapToIdeal, moveTeamCheckpoint, checkpoints, meetingPoint, globalStart, globalFinish, updateGlobalStart, updateGlobalFinish, setStartByName, setFinishByName, moveStartTo, moveFinishTo, removeCheckpoint, updateCheckpoint, updateMeetingPoint, generateRoutes, avoidHighways, isSimulationMode, isOperationActive, walkingMode, toggleWalkingMode, operationStartTime, meetingPointTime, teamProgress, teams, teamCheating, arrivalLog, chatMessages, sendChatMessage, releaseSlot, resetAll }
 }

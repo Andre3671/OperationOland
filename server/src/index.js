@@ -62,6 +62,8 @@ function defaultState() {
     isSimulationMode: false,
     isOperationActive: false,
     walkingMode: false,
+    operationStartTime: null, // ISO string when the operation officially starts
+    meetingPointTime: null,   // ISO string when teams must be at the meeting point
   }
 }
 
@@ -174,7 +176,7 @@ app.post('/api/admin/patch', requireAdmin, (req, res) => {
     'checkpoints', 'meetingPoint', 'globalStart', 'globalFinish',
     'idealRoadPaths', 'teams', 'teamProgress', 'teamCheating',
     'arrivalLog', 'chatMessages', 'isSimulationMode', 'isOperationActive',
-    'history', 'walkingMode',
+    'history', 'walkingMode', 'operationStartTime', 'meetingPointTime',
   ]
   const next = { ...state }
   for (const key of Object.keys(patch)) {

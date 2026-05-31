@@ -130,6 +130,7 @@
           <span v-if="targetCityLabel" class="target-city">📍 {{ targetCityLabel }}</span>
           <span v-if="activeCheckpoint?.region" class="region-tag">{{ activeCheckpoint.region }}</span>
           <span class="distance-tag">{{ distanceLabel }}</span>
+          <span v-if="etaLabel" class="eta-tag">⏱ {{ etaLabel }}</span>
         </span>
       </div>
       <div class="debug-row" v-if="isOverlayActive">
@@ -160,7 +161,7 @@ import { colorForTeam } from '../lib/teamSlots'
 const teamRef = ref(null)
 const teamName = computed(() => teamRef.value?.toLowerCase() || '')
 
-const { getTeamPosition, updateTeamPosition, isSimulationMode, isOperationActive, teams, setTeamName, setTeamActive, teamCheating, chatMessages, sendChatMessage, claimSlot, claimSlotKey } = useSimulationStore()
+const { getTeamPosition, updateTeamPosition, isSimulationMode, isOperationActive, walkingMode, teams, setTeamName, setTeamActive, teamCheating, chatMessages, sendChatMessage, claimSlot, claimSlotKey } = useSimulationStore()
 
 const currentCheatingStats = computed(() => {
   if (!teamName.value) return { offenses: 0, seconds: 0 }
@@ -218,6 +219,20 @@ const distanceLabel = computed(() => {
   if (d < 950) return `${Math.round(d)} m`
   if (d < 10_000) return `${(d / 1000).toFixed(2)} km`
   return `${(d / 1000).toFixed(1)} km`
+})
+
+// Live ETA from current GPS to the active target. Straight-line distance with
+// a 1.2× road-factor, divided by mode-appropriate speed. Driving uses an urban
+// average (30 km/h) since these are mostly local roads.
+const etaLabel = computed(() => {
+  const d = distanceToTarget.value
+  if (d == null || !Number.isFinite(d) || d <= 0) return ''
+  const kmh = walkingMode.value ? 5 : 30
+  const minutes = Math.max(1, Math.round((d * 1.2 / 1000) / kmh * 60))
+  if (minutes < 60) return `${minutes} min`
+  const h = Math.floor(minutes / 60)
+  const m = minutes % 60
+  return `${h}h ${m}m`
 })
 
 // The map locks to the very first GPS fix and never follows the team after
@@ -538,6 +553,13 @@ function sendTeamChat() {
   font-weight: 700;
   font-variant-numeric: tabular-nums;
   margin-left: 4px;
+}
+
+.eta-tag {
+  color: #00ccff;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  margin-left: 8px;
 }
 
 .region-tag {

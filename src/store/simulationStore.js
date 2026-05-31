@@ -59,6 +59,8 @@ const chatMessages = ref(Array.isArray(cached.chatMessages) ? cached.chatMessage
 const isSimulationMode = ref(cached.isSimulationMode ?? false)
 const isOperationActive = ref(cached.isOperationActive ?? false)
 const walkingMode = ref(cached.walkingMode ?? false)
+const operationStartTime = ref(cached.operationStartTime ?? null)
+const meetingPointTime = ref(cached.meetingPointTime ?? null)
 
 export const WALKING_RADIUS_M = 50
 const connectionStatus = ref('connecting')
@@ -84,6 +86,8 @@ function applyState(serverState) {
     isSimulationMode.value = !!serverState.isSimulationMode
     isOperationActive.value = !!serverState.isOperationActive
     walkingMode.value = !!serverState.walkingMode
+    operationStartTime.value = serverState.operationStartTime ?? null
+    meetingPointTime.value = serverState.meetingPointTime ?? null
   } finally {
     queueMicrotask(() => { applyingRemote = false })
   }
@@ -131,6 +135,8 @@ makeAdminPatcher('idealRoadPaths', idealRoadPaths)
 makeAdminPatcher('isSimulationMode', isSimulationMode, { debounce: 50 })
 makeAdminPatcher('isOperationActive', isOperationActive, { debounce: 50 })
 makeAdminPatcher('walkingMode', walkingMode, { debounce: 50 })
+makeAdminPatcher('operationStartTime', operationStartTime, { debounce: 300 })
+makeAdminPatcher('meetingPointTime', meetingPointTime, { debounce: 300 })
 
 // ---- store API ----
 
@@ -298,6 +304,8 @@ export function useSimulationStore() {
     isSimulationMode,
     isOperationActive,
     walkingMode,
+    operationStartTime,
+    meetingPointTime,
     connectionStatus,
     setOperationActive,
     updateTeamPosition,

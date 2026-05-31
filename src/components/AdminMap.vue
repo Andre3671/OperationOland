@@ -1,9 +1,14 @@
 <template>
-  <div :id="mapId" class="admin-leaflet-map"></div>
+  <div class="admin-map-wrap">
+    <div :id="mapId" class="admin-leaflet-map"></div>
+    <button class="layer-toggle" @click="cycleLayer" :title="`Karta: ${currentLayer.label}`">
+      {{ currentLayer.short }}
+    </button>
+  </div>
 </template>
 
 <script setup>
-import { onMounted, onBeforeUnmount, watch, ref, nextTick } from 'vue'
+import { onMounted, onBeforeUnmount, watch, ref, nextTick, computed } from 'vue'
 import L from 'leaflet'
 import { SLOT_KEYS, colorForTeam } from '../lib/teamSlots'
 import { useSimulationStore } from '../store/simulationStore'
@@ -23,8 +28,17 @@ const teamLabel = (key) => teams.value[key]?.name || key.toUpperCase()
 
 const emit = defineEmits(['map-click', 'start-moved', 'finish-moved'])
 
+const TILE_LAYERS = [
+  { key: 'satellite', label: 'Satellit', short: 'SAT', url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}' },
+  { key: 'dark', label: 'Mörk karta', short: 'MAP', url: 'https://cartodb-basemaps-{s}.global.ssl.fastly.net/dark_all/{z}/{x}/{y}.png' },
+  { key: 'light', label: 'Ljus karta', short: 'LJUS', url: 'https://cartodb-basemaps-{s}.global.ssl.fastly.net/light_all/{z}/{x}/{y}.png' },
+]
+const layerIndex = ref(0)
+const currentLayer = computed(() => TILE_LAYERS[layerIndex.value])
+
 const mapId = `admin-map-${Math.random().toString(36).slice(2, 9)}`
 let map = null
+let tileLayer = null
 let idealLayers = []
 let actualLayers = []
 let liveLayer = null
@@ -34,6 +48,17 @@ let axisLayer = null
 let axisLineLayer = null
 let startMarker = null
 let finishMarker = null
+
+function cycleLayer() {
+  layerIndex.value = (layerIndex.value + 1) % TILE_LAYERS.length
+  applyTileLayer()
+}
+
+function applyTileLayer() {
+  if (!map) return
+  if (tileLayer) map.removeLayer(tileLayer)
+  tileLayer = L.tileLayer(currentLayer.value.url, { maxZoom: 19 }).addTo(map)
+}
 
 function createMap() {
   map = L.map(mapId, {
@@ -45,13 +70,11 @@ function createMap() {
     scrollWheelZoom: true,
     boxZoom: true,
     keyboard: true,
-    zoomControl: true,
+    zoomControl: false,
     attributionControl: false
   })
 
-  L.tileLayer('https://cartodb-basemaps-{s}.global.ssl.fastly.net/dark_all/{z}/{x}/{y}.png', {
-    maxZoom: 19
-  }).addTo(map)
+  applyTileLayer()
 
   liveLayer = L.layerGroup().addTo(map)
   checkpointLayer = L.layerGroup().addTo(map)
@@ -276,3 +299,30 @@ onBeforeUnmount(() => {
   }
 })
 </script>
+
+<style scoped>
+.admin-map-wrap {
+  width: 100%;
+  height: 100%;
+}
+.layer-toggle {
+  position: absolute;
+  top: 72px;
+  left: 12px;
+  z-index: 1400;
+  background: rgba(0, 0, 0, 0.85);
+  border: 1px solid rgba(0, 204, 255, 0.45);
+  color: #00ccff;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  padding: 6px 10px;
+  cursor: pointer;
+  border-radius: 3px;
+}
+.layer-toggle:hover {
+  background: rgba(0, 0, 0, 0.95);
+  border-color: #00ccff;
+}
+</style>

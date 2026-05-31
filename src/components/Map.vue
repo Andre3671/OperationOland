@@ -1,9 +1,14 @@
 <template>
-  <div :id="mapId" style="width:100%;height:100%;"></div>
+  <div class="map-wrap">
+    <div :id="mapId" style="width:100%;height:100%;"></div>
+    <button class="layer-toggle" @click="cycleLayer" :title="`Karta: ${currentLayer.label}`">
+      {{ currentLayer.short }}
+    </button>
+  </div>
 </template>
 
 <script setup>
-import { onMounted, onBeforeUnmount, ref, nextTick, watch } from 'vue'
+import { onMounted, onBeforeUnmount, ref, nextTick, watch, computed } from 'vue'
 import L from 'leaflet'
 
 const props = defineProps({
@@ -15,10 +20,30 @@ const props = defineProps({
   teamColor: { type: String, default: '#00ccff' }
 })
 
+const TILE_LAYERS = [
+  { key: 'satellite', label: 'Satellit', short: 'SAT', url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}' },
+  { key: 'dark', label: 'Mörk karta', short: 'MAP', url: 'https://cartodb-basemaps-{s}.global.ssl.fastly.net/dark_all/{z}/{x}/{y}.png' },
+  { key: 'light', label: 'Ljus karta', short: 'LJUS', url: 'https://cartodb-basemaps-{s}.global.ssl.fastly.net/light_all/{z}/{x}/{y}.png' },
+]
+const layerIndex = ref(0)
+const currentLayer = computed(() => TILE_LAYERS[layerIndex.value])
+
 const mapId = `map-${Math.random().toString(36).slice(2, 9)}`
 let map = null
+let tileLayer = null
 let routeLayer = null
 let checkpointLayer = null
+
+function cycleLayer() {
+  layerIndex.value = (layerIndex.value + 1) % TILE_LAYERS.length
+  applyTileLayer()
+}
+
+function applyTileLayer() {
+  if (!map) return
+  if (tileLayer) map.removeLayer(tileLayer)
+  tileLayer = L.tileLayer(currentLayer.value.url, { maxZoom: 19 }).addTo(map)
+}
 
 function drawTacticalData() {
   if (!map) return
@@ -72,18 +97,11 @@ onMounted(async () => {
   map = L.map(mapId, {
     center: props.center,
     zoom: props.zoom,
-    zoomControl: false, // Cleaner tactical look
+    zoomControl: false,
     attributionControl: false
   })
 
-  const hour = new Date().getHours()
-  const isDaytime = hour >= 7 && hour < 20
-  const tileUrl = isDaytime
-    ? 'https://cartodb-basemaps-{s}.global.ssl.fastly.net/light_all/{z}/{x}/{y}.png'
-    : 'https://cartodb-basemaps-{s}.global.ssl.fastly.net/dark_all/{z}/{x}/{y}.png'
-  L.tileLayer(tileUrl, {
-    maxZoom: 19
-  }).addTo(map)
+  applyTileLayer()
 
   routeLayer = L.layerGroup().addTo(map)
   checkpointLayer = L.layerGroup().addTo(map)
@@ -96,3 +114,30 @@ onBeforeUnmount(()=>{
   if (map) { map.remove(); map = null }
 })
 </script>
+
+<style scoped>
+.map-wrap {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+.layer-toggle {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  z-index: 900;
+  background: rgba(0, 0, 0, 0.75);
+  border: 1px solid rgba(0, 255, 0, 0.45);
+  color: #00ff00;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  padding: 6px 10px;
+  cursor: pointer;
+  border-radius: 3px;
+}
+.layer-toggle:hover {
+  background: rgba(0, 0, 0, 0.9);
+}
+</style>

@@ -608,15 +608,14 @@ export function useAdminTracking() {
         await new Promise(r => setTimeout(r, 500))
       }
 
-      // Distribute team lanes across [-1, +1] perpendicular to the start→end
-      // axis. Inner teams (centeredness > 0) get a zigzag to compensate for the
-      // shorter straight-line they'd otherwise take.
-      const getOffsetMult = (teamIndex, i) => {
+      // Distribute team lanes evenly across [-0.7, +0.7] perpendicular to the
+      // start→end axis. Each team gets a constant lateral offset so the routes
+      // stay roughly parallel — the previous zigzag forced middle teams onto
+      // wildly longer snake-paths that broke distance parity.
+      const getOffsetMult = (teamIndex) => {
         if (totalTeams === 1) return 0
-        const base = (2 * teamIndex) / (totalTeams - 1) - 1
-        const centeredness = 1 - Math.abs(base)
-        const zigzag = centeredness * 0.85 * (i % 2 === 0 ? 1 : -1)
-        return base + zigzag
+        const lane = (2 * teamIndex) / (totalTeams - 1) - 1 // -1..+1
+        return lane * 0.7
       }
 
       const maxAttempts = maxMeters ? 3 : 1
@@ -666,7 +665,7 @@ export function useAdminTracking() {
               await new Promise(r => setTimeout(r, 500))
               continue
             }
-            const offsetMult = getOffsetMult(teamIndex, i) * offsetScale
+            const offsetMult = getOffsetMult(teamIndex) * offsetScale
             let geoData = null
             let cpAttempts = 0
             while (!geoData && cpAttempts < 20) {

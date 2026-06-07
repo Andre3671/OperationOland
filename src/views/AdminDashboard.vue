@@ -25,6 +25,7 @@
       </div>
 
       <div class="admin-header-right">
+        <router-link to="/admin/results" class="header-btn header-link" title="Resultatöversikt">RESULTAT</router-link>
         <button class="header-btn" @click="refresh" title="Uppdatera">⟳</button>
         <button
           class="header-btn"
@@ -769,6 +770,12 @@ const toggleSharedSimulation = () => {
   background: #00ccff;
   color: #000;
   font-weight: bold;
+}
+
+.header-link {
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
 }
 
 .header-btn {

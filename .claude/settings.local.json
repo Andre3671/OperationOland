@@ -6,7 +6,8 @@
       "Bash(npx vite *)",
       "Bash(npm install *)",
       "Bash(node --check src/index.js)",
-      "Bash(node --check src/lib/scoring.js)"
+      "Bash(node --check src/lib/scoring.js)",
+      "Bash(grep -n \"    history,\\\\|^    history$\" \"c:/Users/babyb/Desktop/Projekt/OperationOland/src/store/simulationStore.js\")"
     ]
   }
 }

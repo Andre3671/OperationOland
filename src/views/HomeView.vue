@@ -173,8 +173,6 @@ const { checkpoints, activeIndex, advance } = useTeamCheckpoints(teamName)
 
 const teamReady = computed(() => !!teamRef.value)
 const activeCheckpoint = computed(() => checkpoints.value[activeIndex.value] || null)
-const isAntiCheatDisabled = computed(() => activeCheckpoint.value?.type === 'meeting')
-const { locked, penaltySeconds } = useAntiCheat(teamName, isAntiCheatDisabled)
 
 const teamColor = computed(() => colorForTeam(teamName.value))
 
@@ -208,6 +206,12 @@ function commitTeamName() {
 
 // Geofencing Logic - passing reactive sources
 const { isOverlayActive, userLocation, distanceToTarget } = useGeofencing(checkpoints, activeIndex, teamName)
+
+// Disable cheat detection while the player is at a checkpoint — they need to
+// open the camera to upload photos, read the brief, etc. without being
+// penalised for backgrounding the app.
+const isAntiCheatDisabled = computed(() => activeCheckpoint.value?.type === 'meeting' || isOverlayActive.value)
+const { locked, penaltySeconds } = useAntiCheat(teamName, isAntiCheatDisabled)
 
 const targetCityLabel = computed(() => {
   const cp = activeCheckpoint.value

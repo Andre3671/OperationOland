@@ -31,6 +31,11 @@
               <span class="stat-label">Distans</span>
               <span class="stat-value">{{ row.distanceKm.toFixed(1) }} km</span>
             </div>
+            <div class="stat" v-if="row.estimatedKm">
+              <span class="stat-label">Estimerad</span>
+              <span class="stat-value stat-estimated">{{ row.estimatedKm.toFixed(1) }} km</span>
+              <span v-if="row.deviationPct != null" class="stat-sub" :class="row.deviationPct > 20 ? 'is-late' : ''">{{ row.deviationPct >= 0 ? '+' : '' }}{{ row.deviationPct }}%</span>
+            </div>
             <div class="stat">
               <span class="stat-label">Bilder</span>
               <span class="stat-value">{{ row.photoCount }}</span>
@@ -94,6 +99,7 @@ const {
   teamCheating,
   arrivalLog,
   history,
+  idealRoadPaths,
   operationStartTime,
 } = useSimulationStore()
 
@@ -197,12 +203,21 @@ const teamRows = computed(() => {
       totalElapsedMs = sorted[sorted.length - 1].timestamp - startMs
     }
 
+    const ideal = idealRoadPaths.value?.[teamKey]
+    const estimatedKm = Number.isFinite(ideal?.distanceMeters) ? ideal.distanceMeters / 1000 : 0
+    const actualKm = teamDistanceKm(teamKey)
+    const deviationPct = estimatedKm > 0 && actualKm > 0
+      ? Math.round(((actualKm - estimatedKm) / estimatedKm) * 100)
+      : null
+
     return {
       ...row,
       cps,
       photoCount,
       cheatOffenses: teamCheating.value[teamKey]?.offenses || 0,
-      distanceKm: teamDistanceKm(teamKey),
+      distanceKm: actualKm,
+      estimatedKm,
+      deviationPct,
       totalElapsedMs,
     }
   })
@@ -344,6 +359,15 @@ const totalPhotos = computed(() => arrivalLog.value.filter((a) => !!a.photo).len
 
 .stat-score { color: #ffcc00; }
 .stat-cheat { color: #ff6666; }
+.stat-estimated { color: #9ceeff; }
+
+.stat-sub {
+  font-size: 0.65rem;
+  color: #666;
+  font-variant-numeric: tabular-nums;
+  margin-top: 2px;
+}
+.stat-sub.is-late { color: #ff8866; }
 
 .team-empty {
   color: #666;

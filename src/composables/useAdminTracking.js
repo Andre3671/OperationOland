@@ -584,9 +584,15 @@ export function useAdminTracking() {
         return key === startCityKey || key === finishCityKey
       }
 
+      // A CP candidate is rejected if it lands further than this from the query
+      // sample point — prevents Nominatim from snapping forest sample points to
+      // distant settlements and creating long detour spikes.
+      const MAX_CANDIDATE_DRIFT_KM = walkingMode.value ? 2 : 20
+
       const meetingIndex = Math.floor(count / 2)
       const sharedTaskIndexes = new Set(getEvenlySpacedIndexes(count, sharedTaskCount))
       const sharedTaskPoints = new Map()
+      const sharedNameKeys = new Set()
       for (const taskIndex of sharedTaskIndexes) {
         const baseProgress = 0.1 + ((taskIndex + 1) / (count + 1)) * 0.8
         genProgress.value = `Söker gemensamt uppdrag ${taskIndex + 1}/${count}...`
@@ -599,11 +605,17 @@ export function useAdminTracking() {
           const sharedLat = start[0] + (dy * (baseProgress + jitter))
           const sharedLng = start[1] + (dx * (baseProgress + jitter))
           const candidate = await fetchReverse(sharedLat, sharedLng, true)
-          if (candidate && !isForbiddenCity(candidate.name)) sharedData = candidate
+          if (candidate
+              && !isForbiddenCity(candidate.name)
+              && !sharedNameKeys.has(normalizeCity(candidate.name))
+              && haversineDistance({ lat: sharedLat, lng: sharedLng }, candidate) <= MAX_CANDIDATE_DRIFT_KM) {
+            sharedData = candidate
+          }
           sharedAttempts++
           if (!sharedData) await new Promise(r => setTimeout(r, 1000))
         }
         if (!sharedData) throw new Error("Kunde inte hitta en lämplig plats för ett gemensamt uppdrag utanför start-/målorten.")
+        sharedNameKeys.add(normalizeCity(sharedData.name))
         sharedTaskPoints.set(taskIndex, sharedData)
         await new Promise(r => setTimeout(r, 500))
       }
@@ -633,6 +645,7 @@ export function useAdminTracking() {
           attempt++
           teamCheckpointsBuffer = []
           const teamWaypoints = [start]
+          const usedNameKeys = new Set(sharedNameKeys)
 
           for (let i = 0; i <= count; i++) {
             if (i === meetingIndex) {
@@ -670,17 +683,27 @@ export function useAdminTracking() {
             let cpAttempts = 0
             while (!geoData && cpAttempts < 20) {
               const progressRatio = 0.1 + (i / (count + 1)) * 0.8
-              const laneLat = start[0] + (dy * progressRatio) + (perpX * offsetMult) + (Math.random() - 0.5) * cpJitter
-              const laneLng = start[1] + (dx * progressRatio) + (perpY * offsetMult) + (Math.random() - 0.5) * cpJitter
+              // Widen the jitter slightly after each failure so we don't keep
+              // sampling the same forest patch.
+              const widen = 1 + cpAttempts * 0.15
+              const laneLat = start[0] + (dy * progressRatio) + (perpX * offsetMult) + (Math.random() - 0.5) * cpJitter * widen
+              const laneLng = start[1] + (dx * progressRatio) + (perpY * offsetMult) + (Math.random() - 0.5) * cpJitter * widen
               const candidate = await fetchReverse(laneLat, laneLng, true)
-              if (candidate && !isForbiddenCity(candidate.name)) geoData = candidate
+              if (candidate
+                  && !isForbiddenCity(candidate.name)
+                  && !usedNameKeys.has(normalizeCity(candidate.name))
+                  && haversineDistance({ lat: laneLat, lng: laneLng }, candidate) <= MAX_CANDIDATE_DRIFT_KM) {
+                geoData = candidate
+              }
               cpAttempts++
               if(!geoData) await new Promise(r => setTimeout(r, 1500))
             }
-            if (geoData) {
-              teamCheckpointsBuffer.push({ id: nextCheckpointId.value++, team, lat: geoData.lat, lng: geoData.lng, name: geoData.name, city: geoData.name, region: geoData.region || '', title: `Uppdrag: ${geoData.name}`, challenge: `Säkra centrum i ${geoData.name}. Invänta kontakt.`, type: 'task', radius: 600, timeToNext: 0 })
-              teamWaypoints.push([geoData.lat, geoData.lng])
+            if (!geoData) {
+              throw new Error(`Hittade ingen lämplig plats för ${team.toUpperCase()} uppdrag ${taskIndex + 1}/${count}. Prova att byta start/mål eller minska antal lag.`)
             }
+            usedNameKeys.add(normalizeCity(geoData.name))
+            teamCheckpointsBuffer.push({ id: nextCheckpointId.value++, team, lat: geoData.lat, lng: geoData.lng, name: geoData.name, city: geoData.name, region: geoData.region || '', title: `Uppdrag: ${geoData.name}`, challenge: `Säkra centrum i ${geoData.name}. Invänta kontakt.`, type: 'task', radius: 600, timeToNext: 0 })
+            teamWaypoints.push([geoData.lat, geoData.lng])
             await new Promise(r => setTimeout(r, 1500))
           }
           teamWaypoints.push(end)

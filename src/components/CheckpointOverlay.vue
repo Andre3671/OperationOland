@@ -51,12 +51,41 @@
           <h2 class="mission-title">{{ taskName }}</h2>
           <div v-if="cityLine" class="mission-city">{{ cityLine }}</div>
           <div v-if="checkpoint.region" class="mission-region">{{ checkpoint.region }}</div>
+          <div v-if="arriveClock" class="cp-arrive-clock">🕒 Planerad tid: {{ arriveClock }}</div>
           <div class="mission-divider"></div>
           <p class="mission-challenge">{{ checkpoint.challenge }}</p>
 
-          <button class="action-btn task-btn" @click="handleUnlock">
-            [UPPDRAG SLUTFÖRT - LÅS UPP NÄSTA]
+          <div class="photo-row">
+            <button class="action-btn photo-btn" @click="triggerPhotoPicker" :disabled="photoUploading">
+              {{ photoUploading ? 'LADDAR UPP…' : photoUploaded ? '✓ BILD SKICKAD — TA OM' : '📷 TA / LADDA UPP BILD' }}
+            </button>
+            <input
+              ref="photoInputRef"
+              type="file"
+              accept="image/*"
+              capture="environment"
+              class="photo-input"
+              @change="handlePhotoSelected"
+            />
+            <img v-if="photoPreview" :src="photoPreview" class="photo-preview" />
+            <div v-if="photoError" class="photo-error">{{ photoError }}</div>
+          </div>
+
+          <button
+            class="action-btn meeting-btn"
+            :class="{ 'is-holding': isHolding }"
+            @pointerdown.prevent="startHold"
+            @pointerup.prevent="cancelHold"
+            @pointerleave="cancelHold"
+            @pointercancel="cancelHold"
+            @contextmenu.prevent
+          >
+            <span class="hold-fill" :style="{ transform: `scaleX(${holdProgress})` }"></span>
+            <span class="hold-label">{{ holdButtonLabel }}</span>
           </button>
+          <div class="status-message">
+            <span class="blink">●</span> HÅLL INNE I 5s FÖR ATT KONFIRMERA UPPDRAG
+          </div>
         </div>
 
         <!-- Meeting Point Layout -->
@@ -75,8 +104,8 @@
             </div>
           </div>
 
-          <button 
-            class="action-btn meeting-btn" 
+          <button
+            class="action-btn meeting-btn"
             :class="{ 'is-holding': isHolding }"
             @pointerdown.prevent="startHold"
             @pointerup.prevent="cancelHold"
@@ -105,18 +134,29 @@
 <script setup>
 import { ref, computed, watch, onUnmounted } from 'vue'
 
+import { useSimulationStore } from '../store/simulationStore'
+
 const props = defineProps({
   checkpoint: { type: Object, required: true },
-  active: { type: Boolean, default: false }
+  active: { type: Boolean, default: false },
+  team: { type: String, default: '' },
 })
 
 const emit = defineEmits(['unlock'])
+
+const { uploadArrivalPhoto } = useSimulationStore()
 
 const HOLD_MS = 5000
 const holdProgress = ref(0)
 const isHolding = ref(false)
 let holdInterval = null
 let holdStartedAt = 0
+
+const photoInputRef = ref(null)
+const photoPreview = ref('')
+const photoUploading = ref(false)
+const photoUploaded = ref(false)
+const photoError = ref('')
 
 const taskName = computed(() => {
   const cp = props.checkpoint || {}
@@ -160,7 +200,9 @@ const clearHold = () => {
 }
 
 const startHold = () => {
-  if (props.checkpoint.type !== 'meeting' || holdInterval) return
+  const t = props.checkpoint.type
+  if (t !== 'meeting' && t !== 'task') return
+  if (holdInterval) return
   isHolding.value = true
   holdStartedAt = Date.now()
   holdProgress.value = 0
@@ -184,11 +226,65 @@ const handleUnlock = () => {
   emit('unlock')
 }
 
+function triggerPhotoPicker() {
+  photoError.value = ''
+  photoInputRef.value?.click()
+}
+
+// Resize the source image to max 1280 px on the long side and re-encode as
+// JPEG ~0.8 quality so a phone photo lands at well under 1 MB on the wire.
+async function resizeImage(file) {
+  const bitmap = await createImageBitmap(file)
+  const MAX = 1280
+  const scale = Math.min(1, MAX / Math.max(bitmap.width, bitmap.height))
+  const w = Math.round(bitmap.width * scale)
+  const h = Math.round(bitmap.height * scale)
+  const canvas = document.createElement('canvas')
+  canvas.width = w
+  canvas.height = h
+  const ctx = canvas.getContext('2d')
+  ctx.drawImage(bitmap, 0, 0, w, h)
+  return canvas.toDataURL('image/jpeg', 0.8)
+}
+
+async function handlePhotoSelected(event) {
+  const file = event.target.files?.[0]
+  event.target.value = ''
+  if (!file) return
+  if (!props.team) {
+    photoError.value = 'Inget lag valt – kan inte ladda upp.'
+    return
+  }
+  photoUploading.value = true
+  photoError.value = ''
+  try {
+    const dataUrl = await resizeImage(file)
+    photoPreview.value = dataUrl
+    await uploadArrivalPhoto(props.team, props.checkpoint.id, dataUrl)
+    photoUploaded.value = true
+  } catch (e) {
+    photoError.value = 'Uppladdning misslyckades: ' + (e?.message || e)
+    photoUploaded.value = false
+  } finally {
+    photoUploading.value = false
+  }
+}
+
+function resetPhotoState() {
+  photoPreview.value = ''
+  photoUploaded.value = false
+  photoUploading.value = false
+  photoError.value = ''
+}
+
 watch(() => props.active, (isNowActive) => {
   if (!isNowActive) clearHold()
 })
 
-watch(() => props.checkpoint.id, clearHold)
+watch(() => props.checkpoint.id, () => {
+  clearHold()
+  resetPhotoState()
+})
 
 onUnmounted(() => {
   clearHold()
@@ -389,6 +485,43 @@ onUnmounted(() => {
   color: #eee;
   font-size: 0.95rem;
   line-height: 1.5;
+}
+
+.photo-row {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 10px;
+  margin-bottom: 18px;
+}
+
+.photo-input {
+  display: none;
+}
+
+.photo-btn {
+  padding: 14px;
+  font-size: 0.9rem;
+}
+
+.photo-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.photo-preview {
+  width: 100%;
+  max-height: 200px;
+  object-fit: cover;
+  border: 1px solid currentColor;
+  opacity: 0.85;
+}
+
+.photo-error {
+  color: #ff6666;
+  font-size: 0.75rem;
+  text-align: left;
 }
 
 .meeting-btn {

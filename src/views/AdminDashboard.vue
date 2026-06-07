@@ -165,6 +165,9 @@
               {{ entry.checkpointType.toUpperCase() }}
               <span v-if="entry.distanceMeters != null"> · {{ entry.distanceMeters }} m från centrum</span>
             </div>
+            <a v-if="entry.photo" :href="entry.photo" target="_blank" class="arrival-photo-link">
+              <img :src="entry.photo" class="arrival-photo" alt="lag-bild" />
+            </a>
           </div>
         </div>
       </div>
@@ -1542,6 +1545,18 @@ const toggleSharedSimulation = () => {
 .arrival-meta {
   margin-top: 3px;
   letter-spacing: 0.05em;
+}
+
+.arrival-photo-link {
+  display: block;
+  margin-top: 6px;
+}
+
+.arrival-photo {
+  width: 100%;
+  max-height: 160px;
+  object-fit: cover;
+  border: 1px solid rgba(255, 204, 0, 0.4);
 }
 
 .log-empty {

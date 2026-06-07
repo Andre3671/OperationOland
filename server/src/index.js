@@ -159,7 +159,9 @@ function calcStatus(state, teamEntry) {
 // ---- HTTP API ----
 
 const app = express()
-app.use(express.json({ limit: '512kb' }))
+// Photo uploads are base64 data URLs ≈ 1.3× the image bytes; allow 4 MB so a
+// resized phone photo (~1-2 MB on the wire) fits comfortably.
+app.use(express.json({ limit: '4mb' }))
 
 app.get('/api/health', (_req, res) => res.json({ ok: true }))
 
@@ -366,6 +368,26 @@ app.post('/api/arrival', (req, res) => {
   }
   const next = { ...state, arrivalLog: [entry, ...state.arrivalLog].slice(0, 300) }
   commit(next)
+  res.json({ ok: true })
+})
+
+// Attach a photo (data URL) to the most recent arrival entry for the team at
+// the given checkpoint. Teams upload one photo per task completion.
+app.post('/api/arrival-photo', (req, res) => {
+  const key = (req.body?.team || '').toString().toLowerCase()
+  const checkpointId = req.body?.checkpointId
+  const photo = (req.body?.photo || '').toString()
+  if (!key || checkpointId == null || !photo) return res.status(400).json({ error: 'team, checkpointId and photo required' })
+  if (!photo.startsWith('data:image/')) return res.status(400).json({ error: 'photo must be a data URL' })
+  if (photo.length > 3_500_000) return res.status(413).json({ error: 'photo too large' })
+
+  const idx = state.arrivalLog.findIndex(e => e.team === key && e.checkpointId === checkpointId)
+  if (idx === -1) return res.status(404).json({ error: 'arrival entry not found' })
+
+  const updated = { ...state.arrivalLog[idx], photo, photoAt: Date.now() }
+  const nextLog = state.arrivalLog.slice()
+  nextLog[idx] = updated
+  commit({ ...state, arrivalLog: nextLog })
   res.json({ ok: true })
 })
 

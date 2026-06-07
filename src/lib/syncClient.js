@@ -73,6 +73,8 @@ export const api = {
   registerCheating: (team, seconds) => postJson('/api/cheating', { team, seconds }),
   recordArrival: (team, checkpoint, distanceMeters) =>
     postJson('/api/arrival', { team, checkpoint, distanceMeters }),
+  uploadArrivalPhoto: (team, checkpointId, photo) =>
+    postJson('/api/arrival-photo', { team, checkpointId, photo }),
   sendChat: (sender, text, role) =>
     postJson('/api/chat', { sender, text, role }, { admin: role === 'admin' }),
 }

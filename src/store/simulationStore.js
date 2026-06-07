@@ -194,6 +194,16 @@ export function useSimulationStore() {
     })
   }
 
+  async function uploadArrivalPhoto(team, checkpointId, photo) {
+    if (!team || checkpointId == null || !photo) return
+    try {
+      await api.uploadArrivalPhoto(team, checkpointId, photo)
+    } catch (e) {
+      console.warn('[sync] uploadArrivalPhoto failed:', e)
+      throw e
+    }
+  }
+
   function sendChatMessage(sender, text, role = 'team') {
     if (!text || !text.toString().trim()) return
     api.sendChat(sender, text, role).catch((e) => {
@@ -312,6 +322,7 @@ export function useSimulationStore() {
     getTeamPosition,
     updateTeamProgress,
     recordCheckpointArrival,
+    uploadArrivalPhoto,
     sendChatMessage,
     registerCheating,
     setTeamName,

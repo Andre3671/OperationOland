@@ -114,10 +114,11 @@
       </form>
     </div>
     
-    <CheckpointOverlay 
-      v-if="teamReady && activeCheckpoint" 
-      :active="isOverlayActive" 
+    <CheckpointOverlay
+      v-if="teamReady && activeCheckpoint"
+      :active="isOverlayActive"
       :checkpoint="activeCheckpoint"
+      :team="teamName"
       @unlock="completeMission"
     />
 

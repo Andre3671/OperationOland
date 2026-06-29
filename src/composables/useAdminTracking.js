@@ -41,6 +41,12 @@ const ESTIMATED_WALKING_KMH = 5
 const ROAD_DISTANCE_FACTOR = 1.25
 const WALKING_DISTANCE_FACTOR = 1.15
 
+// The road router (and the straight-line fallback) estimate driving time
+// conservatively — on real Öland/Skåne roads driven at the speed limit, teams
+// beat the plan by roughly 15%. Scale driving ETAs to match observed reality.
+// Lower this if estimates still run high, raise it toward 1.0 if they run low.
+const DRIVE_ETA_FACTOR = 0.85
+
 function estimateSegmentMinutes(from, to, walking = false) {
   const factor = walking ? WALKING_DISTANCE_FACTOR : ROAD_DISTANCE_FACTOR
   const kmh = walking ? ESTIMATED_WALKING_KMH : ESTIMATED_DRIVING_KMH
@@ -53,12 +59,16 @@ function getSegmentMinutes(route, waypoints, walking = false) {
   const legs = Math.max(0, (waypoints?.length || 0) - 1)
   if (legs === 0) return []
 
+  // Driving ETAs get the real-world correction; walking is left as-is.
+  const factor = walking ? 1 : DRIVE_ETA_FACTOR
   return Array.from({ length: legs }, (_, index) => {
     const durationSeconds = route?.segments?.[index]?.duration
     if (Number.isFinite(durationSeconds) && durationSeconds > 0) {
-      return Math.max(1, Math.round(durationSeconds / 60))
+      return Math.max(1, Math.round((durationSeconds / 60) * factor))
     }
-    return estimateSegmentMinutes(waypoints[index], waypoints[index + 1], walking)
+    return Math.max(1, Math.round(
+      estimateSegmentMinutes(waypoints[index], waypoints[index + 1], walking) * factor
+    ))
   })
 }
 

@@ -17,7 +17,12 @@ const props = defineProps({
   idealRoute: { type: Array, default: () => [] },
   checkpoints: { type: Array, default: () => [] },
   activeIndex: { type: Number, default: 0 },
-  teamColor: { type: String, default: '#00ccff' }
+  teamColor: { type: String, default: '#00ccff' },
+  // The parent keeps this component mounted and only hides it (v-show) while a
+  // checkpoint overlay is up, so the player's pan/zoom/chosen tile layer
+  // survive across checkpoints. Leaflet can't lay out tiles while display:none,
+  // so we re-measure when we become visible again.
+  visible: { type: Boolean, default: true }
 })
 
 const TILE_LAYERS = [
@@ -85,6 +90,12 @@ function drawTacticalData() {
 watch(() => [props.idealRoute, props.checkpoints, props.activeIndex], () => {
   drawTacticalData()
 }, { deep: true })
+
+// When the overlay closes and the map is shown again, Leaflet needs to
+// re-measure (it had zero size while hidden) or tiles render greyed/offset.
+watch(() => props.visible, (isVisible) => {
+  if (isVisible && map) nextTick(() => map.invalidateSize())
+})
 
 // Note: we intentionally do NOT watch props.center. The navigator view locks
 // the camera to the first GPS fix; subsequent location changes must not pan

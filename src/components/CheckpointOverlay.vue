@@ -106,9 +106,25 @@
             </div>
           </div>
 
+          <div class="photo-row">
+            <button class="action-btn photo-btn" @click="triggerPhotoPicker" :disabled="photoUploading">
+              {{ photoUploading ? 'LADDAR UPP…' : photoUploaded ? '✓ BILD SKICKAD — TA OM' : '📷 TA / LADDA UPP BILD' }}
+            </button>
+            <input
+              ref="photoInputRef"
+              type="file"
+              accept="image/*"
+              capture="environment"
+              class="photo-input"
+              @change="handlePhotoSelected"
+            />
+            <img v-if="photoPreview" :src="photoPreview" class="photo-preview" />
+            <div v-if="photoError" class="photo-error">{{ photoError }}</div>
+          </div>
+
           <button
             class="action-btn meeting-btn"
-            :class="{ 'is-holding': isHolding }"
+            :class="{ 'is-holding': isHolding, 'is-locked': photoGateBlocking }"
             @pointerdown.prevent="startHold"
             @pointerup.prevent="cancelHold"
             @pointerleave="cancelHold"
@@ -119,7 +135,9 @@
             <span class="hold-label">{{ holdButtonLabel }}</span>
           </button>
           <div class="status-message">
-            <span class="blink">●</span> HÅLL INNE KNAPPEN I 5 SEKUNDER FÖR NÄSTA CHECKPOINT
+            <span class="blink">●</span>
+            <template v-if="photoGateBlocking">BILDBEVIS KRÄVS INNAN NI KAN GÅ VIDARE</template>
+            <template v-else>HÅLL INNE KNAPPEN I 5 SEKUNDER FÖR NÄSTA CHECKPOINT</template>
           </div>
         </div>
 
@@ -186,11 +204,12 @@ const overlayTheme = computed(() => {
   return 'theme-green'
 })
 
-// Tasks require photo proof before the team may advance. Tunable per
-// checkpoint via requirePhoto; defaults to required for task checkpoints so a
-// team can't hold-to-skip a mission without submitting evidence.
+// Every checkpoint the team advances past (task missions and meeting/regroup
+// points) requires photo proof before the hold-to-confirm will fire — no
+// hold-to-skip without submitting evidence. Start (kickoff) and finish (no
+// advance) are excluded.
 const photoRequired = computed(() =>
-  props.checkpoint.type === 'task' && props.checkpoint.requirePhoto !== false
+  props.checkpoint.type === 'task' || props.checkpoint.type === 'meeting'
 )
 const photoGateBlocking = computed(() => photoRequired.value && !photoUploaded.value)
 

@@ -41,11 +41,15 @@
         <span v-if="gpsError === 'denied'">GPS nekad — aktivera platstjänster för appen och ladda om sidan.</span>
         <span v-else>Ingen GPS-signal. Kontrollera att platstjänster är på och att du är utomhus.</span>
       </div>
-      <!-- Map is hidden when overlay is active to ensure user focuses on mission/meeting -->
+      <!-- Map stays mounted and is merely hidden (v-show) while a checkpoint
+           overlay is up — destroying/recreating it on every checkpoint reset the
+           player's pan/zoom/map-layer choice and snapped the view back. -->
       <MapView
-        v-if="teamReady && initialCenter && !isOverlayActive"
+        v-if="teamReady && initialCenter"
+        v-show="!isOverlayActive"
         :center="initialCenter"
         :zoom="14"
+        :visible="!isOverlayActive"
         :checkpoints="checkpoints"
         :activeIndex="activeIndex"
         :teamColor="teamColor"
@@ -286,14 +290,26 @@ const etaLabel = computed(() => {
   return `${h}h ${m}m`
 })
 
-// The map locks to the very first GPS fix and never follows the team after
-// that — players see the terrain near where they started, not a live tracker.
-// The GPS itself keeps running for distance calculations and admin telemetry.
+// The map sets its initial camera ONCE, then stays put (it doesn't follow the
+// team). Priority: the team's START checkpoint, so when the operation begins
+// the map opens on the starting point — then the first GPS fix, the team's last
+// known position, and finally the Öland default. After that the player is free
+// to pan/zoom and switch map layers; the view is preserved across checkpoints.
 const initialCenter = ref(null)
 
-const stopInitialCenterWatch = watch(userLocation, (loc) => {
-  if (loc && !initialCenter.value) {
-    initialCenter.value = [loc.lat, loc.lng]
+const startPoint = computed(() => {
+  const start = checkpoints.value.find(cp => cp.type === 'start')
+  if (start && Number.isFinite(start.lat) && Number.isFinite(start.lng)) {
+    return [start.lat, start.lng]
+  }
+  return null
+})
+
+// Prefer the start checkpoint as soon as it's known. Routes are generated
+// before the operation begins, so this normally wins immediately.
+const stopInitialCenterWatch = watch(startPoint, (sp) => {
+  if (sp && !initialCenter.value) {
+    initialCenter.value = sp
     stopInitialCenterWatch()
   }
 }, { immediate: true })
@@ -301,10 +317,16 @@ const stopInitialCenterWatch = watch(userLocation, (loc) => {
 let fallbackCenterTimer = null
 onMounted(() => {
   restoreTeamFromUrl()
+  // Only if there's no start checkpoint at all (e.g. routes not configured):
+  // fall back to GPS, then last known position, then the Öland default.
   fallbackCenterTimer = setTimeout(() => {
     if (initialCenter.value) return
-    const pos = getTeamPosition(teamName.value)
-    initialCenter.value = pos ? [pos.lat, pos.lng] : [56.8, 16.6]
+    if (userLocation.value) {
+      initialCenter.value = [userLocation.value.lat, userLocation.value.lng]
+    } else {
+      const pos = getTeamPosition(teamName.value)
+      initialCenter.value = pos ? [pos.lat, pos.lng] : [56.8, 16.6]
+    }
     stopInitialCenterWatch()
   }, 6000)
 })

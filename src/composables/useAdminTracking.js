@@ -226,9 +226,12 @@ export function useAdminTracking() {
 
   const activeIdealRoutes = computed(() => {
     return SLOT_KEYS.map(team => {
-      const roadPath = idealRoadPaths.value[team]
-      if (!roadPath || roadPath.length === 0) return null
-      return { team, path: roadPath, displayName: teams.value[team]?.name || team.toUpperCase() }
+      const entry = idealRoadPaths.value[team]
+      // Stored shape is { path, distanceMeters, ... }; tolerate the legacy
+      // bare-array shape too so old persisted state still renders.
+      const path = Array.isArray(entry) ? entry : entry?.path
+      if (!path || path.length === 0) return null
+      return { team, path, displayName: teams.value[team]?.name || team.toUpperCase() }
     }).filter(Boolean)
   })
 
@@ -768,7 +771,16 @@ export function useAdminTracking() {
           finishCheckpoint,
           segmentMinutes,
         })
-        idealRoadPaths.value[team] = teamRoute
+        // Store as a plain object: the distance/duration metadata is set as
+        // ad-hoc properties on the coords array by fetchRoadRoute, and those
+        // are silently dropped by the JSON round-trip the store uses to sync
+        // state to the server. Promote them to real object fields so the
+        // Results view's estimated distance / deviation survive the sync.
+        idealRoadPaths.value[team] = {
+          path: teamRoute,
+          distanceMeters: Number.isFinite(teamRoute?.distanceMeters) ? teamRoute.distanceMeters : null,
+          durationSeconds: Number.isFinite(teamRoute?.durationSeconds) ? teamRoute.durationSeconds : null,
+        }
         if (teamRoute && teamRoute.distanceMeters) {
           const km = (teamRoute.distanceMeters / 1000).toFixed(1)
           const overMax = maxMeters && teamRoute.distanceMeters > maxMeters
@@ -845,10 +857,13 @@ export function useAdminTracking() {
   function removeCheckpoint(id) { checkpoints.value = checkpoints.value.filter((cp) => cp.id !== id) }
   function moveTeamCheckpoint(team, delta) {
     const key = (team || '').toLowerCase()
-    const teamCheckpointCount = checkpoints.value.filter(cp => cp.team.toLowerCase() === key).length
+    const teamCheckpointCount = checkpoints.value.filter(cp => (cp.team || '').toLowerCase() === key).length
     if (!teamCheckpointCount) return
     const current = teamProgress.value[key] || 0
-    updateTeamProgress(key, current + delta)
+    // Clamp so "previous CP" at the start can't send -1 and "next CP" past the
+    // last can't overshoot the checkpoint count.
+    const next = Math.max(0, Math.min(current + delta, teamCheckpointCount))
+    updateTeamProgress(key, next)
   }
   function updateMeetingPoint(lat, lng, name, region = '') { meetingPoint.value = { lat: parseFloat(lat), lng: parseFloat(lng), name, region } }
   function updateGlobalStart(lat, lng, name, region = '') { globalStart.value = { lat: parseFloat(lat), lng: parseFloat(lng), name, region } }

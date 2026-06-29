@@ -29,6 +29,7 @@
         <div class="actions">
           <button class="primary" @click="reload">LADDA OM SIDAN</button>
           <button class="ghost" @click="probe">FÖRSÖK IGEN</button>
+          <button class="danger" @click="$emit('skip')">FORTSÄTT UTAN KOMPASS</button>
         </div>
       </div>
 
@@ -44,6 +45,7 @@
         <div class="actions">
           <button class="primary" @click="reload">LADDA OM SIDAN</button>
           <button class="ghost" @click="probe">FÖRSÖK IGEN</button>
+          <button class="danger" @click="$emit('skip')">FORTSÄTT UTAN KOMPASS</button>
         </div>
       </div>
 

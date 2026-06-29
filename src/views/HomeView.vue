@@ -1,8 +1,14 @@
 <template>
   <div>
+    <!-- Server unreachable: distinguish a real outage from "admin hasn't set up
+         routes yet" so players (and support) aren't left guessing. -->
+    <div v-if="connectionStatus === 'disconnected'" class="conn-banner">
+      <span class="conn-banner-dot"></span>
+      Ingen kontakt med servern — försöker återansluta…
+    </div>
     <header class="app-header">
       <div class="header-left">
-        <div class="title">OPERATION ÖLAND // {{ isSimulationMode ? 'SIMULERING AKTIVERAD' : 'LIVE GPS AKTIV' }}</div>
+        <div class="title">OPERATION ÖLAND // {{ linkStateLabel }}</div>
         <div style="opacity:0.6">•</div>
         <div class="team-name-block" v-if="teamReady">
           <span class="team-name-label">Team:</span>
@@ -19,13 +25,22 @@
         </div>
       </div>
       <div style="margin-left:auto;display:flex;align-items:center;gap:12px">
-        <button v-if="teamReady" class="nav-mini-btn" @click="chatOpen = !chatOpen">CHAT</button>
+        <button v-if="teamReady" class="nav-mini-btn chat-btn" @click="toggleChat">
+          CHAT<span v-if="unreadChatCount > 0" class="chat-unread">{{ unreadChatCount }}</span>
+        </button>
         <button v-if="teamReady" class="nav-mini-btn" @click="switchNavigator">BYT</button>
-        <div class="status-dot live-pulse" title="STATUS: AKTIV"></div>
+        <div class="status-dot" :class="gpsError ? 'gps-down' : 'live-pulse'" :title="gpsError ? 'STATUS: GPS SAKNAS' : 'STATUS: AKTIV'"></div>
       </div>
     </header>
 
     <main class="map-container">
+      <!-- GPS failed/denied: tell the navigator instead of leaving them silently
+           stuck with no position, no compass target and no arrivals. -->
+      <div v-if="teamReady && gpsError" class="gps-error-banner">
+        <span class="gps-error-icon">⚠</span>
+        <span v-if="gpsError === 'denied'">GPS nekad — aktivera platstjänster för appen och ladda om sidan.</span>
+        <span v-else>Ingen GPS-signal. Kontrollera att platstjänster är på och att du är utomhus.</span>
+      </div>
       <!-- Map is hidden when overlay is active to ensure user focuses on mission/meeting -->
       <MapView
         v-if="teamReady && initialCenter && !isOverlayActive"
@@ -163,7 +178,7 @@ import { colorForTeam } from '../lib/teamSlots'
 const teamRef = ref(null)
 const teamName = computed(() => teamRef.value?.toLowerCase() || '')
 
-const { getTeamPosition, updateTeamPosition, isSimulationMode, isOperationActive, walkingMode, teams, setTeamName, setTeamActive, teamCheating, chatMessages, sendChatMessage, claimSlot, claimSlotKey } = useSimulationStore()
+const { getTeamPosition, updateTeamPosition, isSimulationMode, isOperationActive, walkingMode, teams, setTeamName, setTeamActive, teamCheating, chatMessages, sendChatMessage, claimSlot, claimSlotKey, connectionStatus } = useSimulationStore()
 
 const currentCheatingStats = computed(() => {
   if (!teamName.value) return { offenses: 0, seconds: 0 }
@@ -181,6 +196,28 @@ const welcomed = ref(false)
 const sensorsReady = ref(false)
 const chatOpen = ref(false)
 const teamChatDraft = ref('')
+
+// Link-state label in the header reflects what's actually happening with GPS
+// instead of always claiming "LIVE GPS AKTIV".
+const linkStateLabel = computed(() => {
+  if (isSimulationMode.value) return 'SIMULERING AKTIVERAD'
+  if (gpsError.value === 'denied') return 'GPS NEKAD'
+  if (gpsError.value) return 'INGEN GPS-SIGNAL'
+  return 'LIVE GPS AKTIV'
+})
+
+// Unread-chat badge on the CHAT button so admin/team messages don't arrive
+// silently while the panel is closed. Messages the team sent themselves don't
+// count. Opening/closing the panel marks everything as seen.
+const lastSeenChatTs = ref(Date.now())
+const unreadChatCount = computed(() => {
+  if (chatOpen.value) return 0
+  return chatMessages.value.filter(m => m.timestamp > lastSeenChatTs.value && m.sender !== teamName.value).length
+})
+function toggleChat() {
+  chatOpen.value = !chatOpen.value
+  lastSeenChatTs.value = Date.now()
+}
 
 watch(teamName, (name) => {
   if (!name) return
@@ -205,7 +242,7 @@ function commitTeamName() {
 
 
 // Geofencing Logic - passing reactive sources
-const { isOverlayActive, userLocation, distanceToTarget } = useGeofencing(checkpoints, activeIndex, teamName)
+const { isOverlayActive, userLocation, distanceToTarget, gpsError, resetGeofence } = useGeofencing(checkpoints, activeIndex, teamName)
 
 // Disable cheat detection while the player is at a checkpoint — they need to
 // open the camera to upload photos, read the brief, etc. without being
@@ -304,27 +341,39 @@ function switchNavigator() {
   if (teamName.value) setTeamActive(teamName.value, false)
   teamRef.value = null
   chatOpen.value = false
-  isOverlayActive.value = false
+  // Reset the geofence latch as well — clearing isOverlayActive alone leaves
+  // the composable's triggeredCheckpointKey set, so the next navigator on the
+  // same checkpoint would never see the arrival overlay re-open.
+  resetGeofence()
   initialCenter.value = null
   const p = new URLSearchParams(window.location.search)
   p.delete('team')
   history.replaceState({}, '', `${location.pathname}${p.toString() ? `?${p.toString()}` : ''}`)
 }
 
+let restoringFromUrl = false
 async function restoreTeamFromUrl() {
   const requestedTeam = new URLSearchParams(window.location.search).get('team')?.trim()
-  if (!requestedTeam || teamRef.value) return
-
-  const normalized = requestedTeam.toLowerCase()
-  let slot = null
-  if (teams.value[normalized]?.enabled) {
-    slot = await claimSlotKey(normalized, requestedTeam)
-  }
-  if (!slot) {
-    slot = await claimSlot(requestedTeam)
-  }
-  if (slot) {
-    selectTeam(slot, requestedTeam, { clearHistory: !teams.value[normalized]?.enabled })
+  // The teams deep-watch fires this on every server snapshot. teamRef is only
+  // set after the awaited claim resolves, so without an in-flight guard two
+  // snapshots arriving during that window fire concurrent claims for the same
+  // name and can double-bind / claim two slots.
+  if (!requestedTeam || teamRef.value || restoringFromUrl) return
+  restoringFromUrl = true
+  try {
+    const normalized = requestedTeam.toLowerCase()
+    let slot = null
+    if (teams.value[normalized]?.enabled) {
+      slot = await claimSlotKey(normalized, requestedTeam)
+    }
+    if (!slot) {
+      slot = await claimSlot(requestedTeam)
+    }
+    if (slot) {
+      selectTeam(slot, requestedTeam, { clearHistory: !teams.value[normalized]?.enabled })
+    }
+  } finally {
+    restoringFromUrl = false
   }
 }
 
@@ -589,6 +638,82 @@ function sendTeamChat() {
   margin: 0 4px;
   text-transform: uppercase;
   letter-spacing: 0.08em;
+}
+
+.conn-banner {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 7px 12px;
+  background: #7a1414;
+  color: #ffdede;
+  font-size: 0.78rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.conn-banner-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #ff5555;
+  animation: gps-spin 1s linear infinite;
+  box-shadow: 0 0 8px #ff5555;
+}
+
+.gps-error-banner {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  background: rgba(120, 20, 20, 0.95);
+  color: #ffd9d9;
+  font-size: 0.8rem;
+  line-height: 1.3;
+  letter-spacing: 0.02em;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.5);
+}
+
+.gps-error-icon {
+  font-size: 1.1rem;
+  flex: 0 0 auto;
+}
+
+.chat-btn {
+  position: relative;
+}
+
+.chat-unread {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 8px;
+  background: #ff3b3b;
+  color: #fff;
+  font-size: 0.65rem;
+  font-weight: 700;
+  line-height: 16px;
+  text-align: center;
+  box-shadow: 0 0 6px rgba(255, 59, 59, 0.7);
+}
+
+.status-dot.gps-down {
+  background: #ff5555;
+  box-shadow: 0 0 8px #ff5555;
 }
 
 .gps-wait {

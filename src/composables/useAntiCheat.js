@@ -1,6 +1,9 @@
 import { ref, onMounted, onBeforeUnmount, toValue, watch } from 'vue'
 import { useSimulationStore } from '../store/simulationStore'
 
+// Grace period before a backgrounded app is treated as cheating (ms).
+const BACKGROUND_GRACE_MS = 25000
+
 export function useAntiCheat(teamNameSource, disabledSource = false){
   const { registerCheating } = useSimulationStore()
   const locked = ref(false)
@@ -42,22 +45,35 @@ export function useAntiCheat(teamNameSource, disabledSource = false){
     }, 1000)
   }
 
+  function abortPenalty(){
+    if (penaltyInterval){ clearInterval(penaltyInterval); penaltyInterval = null }
+    penaltySeconds.value = 0
+    locked.value = false
+  }
+
   function handleVisibility(){
     if (toValue(disabledSource)) return
     if (document.hidden){
-      // Trigger lockout if they stay away for more than 3 seconds
+      // Grace period before a backgrounded app counts as cheating. Kept
+      // generous because real-world interruptions on a roadtrip (incoming
+      // call, notification shade, screen auto-lock, the iOS camera/photo
+      // picker) all hide the page briefly and must NOT trip a penalty.
       visibilityTimer = setTimeout(()=>{
         if (!locked.value && !toValue(disabledSource)) startPenalty()
-      }, 3000)
+      }, BACKGROUND_GRACE_MS)
     } else {
       if (visibilityTimer){ clearTimeout(visibilityTimer); visibilityTimer = null }
     }
   }
 
   watch(() => toValue(disabledSource), (disabled) => {
-    if (!disabled || !visibilityTimer) return
-    clearTimeout(visibilityTimer)
-    visibilityTimer = null
+    if (!disabled) return
+    // Disabling means the player is legitimately at a checkpoint/meeting.
+    // Cancel a pending trigger AND abort any penalty already running, otherwise
+    // it keeps charging cheat-seconds and locks them out of the very checkpoint
+    // they just reached for the full 5 minutes.
+    if (visibilityTimer){ clearTimeout(visibilityTimer); visibilityTimer = null }
+    if (penaltyInterval || locked.value) abortPenalty()
   })
 
   onMounted(()=>{

@@ -64,7 +64,7 @@
             <div class="team-card-title">{{ team.displayName }}</div>
             <button class="kick-btn" @click="confirmKick(team)" :title="`Kicka ${team.displayName} — slotten blir ledig`">KICK</button>
           </div>
-          <div class="team-row"><span>Uppdrag</span><span style="color: #00ccff; font-weight: bold;">{{ teamProgress[team.team]?.valueOf() + 1 }} / {{ checkpoints.filter(cp => cp.team === team.team).length }}</span></div>
+          <div class="team-row"><span>Uppdrag</span><span style="color: #00ccff; font-weight: bold;">{{ Math.min((teamProgress[team.team] || 0) + 1, checkpoints.filter(cp => cp.team === team.team).length) }} / {{ checkpoints.filter(cp => cp.team === team.team).length }}</span></div>
           <div class="team-row"><span>Status</span><span :class="statusClass(team.status)">{{ team.status }}</span></div>
           <div class="team-row"><span>Total distans</span><span>{{ team.distanceKm.toFixed(1) }} km</span></div>
           <div class="team-row"><span>Avvikelse</span><span>{{ team.deviation.toFixed(1) }} %</span></div>

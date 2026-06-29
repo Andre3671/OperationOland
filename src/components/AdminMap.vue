@@ -192,7 +192,7 @@ function drawRoutes() {
   // 1. Draw Ideal Routes (The planned road-following paths)
   idealLayers = props.idealRoutes.map((route) => {
     return L.polyline(route.path, {
-      color: colorForTeam(route.team.toLowerCase()),
+      color: colorForTeam((route.team || '').toLowerCase()),
       weight: 4,
       opacity: 0.4,
       dashArray: '10,10'
@@ -229,7 +229,7 @@ function drawRoutes() {
   //    axis markers already represent them.
   SLOT_KEYS.forEach(team => {
     const teamCps = props.checkpoints
-      .filter(cp => cp.team.toLowerCase() === team && cp.type !== 'start' && cp.type !== 'finish')
+      .filter(cp => (cp.team || '').toLowerCase() === team && cp.type !== 'start' && cp.type !== 'finish')
       .sort((a, b) => a.id - b.id)
 
     if (teamCps.length === 0) return

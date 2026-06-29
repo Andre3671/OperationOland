@@ -73,7 +73,7 @@
 
           <button
             class="action-btn meeting-btn"
-            :class="{ 'is-holding': isHolding }"
+            :class="{ 'is-holding': isHolding, 'is-locked': photoGateBlocking }"
             @pointerdown.prevent="startHold"
             @pointerup.prevent="cancelHold"
             @pointerleave="cancelHold"
@@ -84,7 +84,9 @@
             <span class="hold-label">{{ holdButtonLabel }}</span>
           </button>
           <div class="status-message">
-            <span class="blink">●</span> HÅLL INNE I 5s FÖR ATT KONFIRMERA UPPDRAG
+            <span class="blink">●</span>
+            <template v-if="photoGateBlocking">BILDBEVIS KRÄVS INNAN NI KAN GÅ VIDARE</template>
+            <template v-else>HÅLL INNE I 5s FÖR ATT KONFIRMERA UPPDRAG</template>
           </div>
         </div>
 
@@ -124,7 +126,7 @@
         <!-- Footer Decor -->
         <div class="modal-footer">
           <div class="scanner-line"></div>
-          <span class="coordinates">{{ checkpoint.lat.toFixed(4) }}N, {{ checkpoint.lng.toFixed(4) }}E</span>
+          <span class="coordinates" v-if="Number.isFinite(checkpoint.lat) && Number.isFinite(checkpoint.lng)">{{ checkpoint.lat.toFixed(4) }}N, {{ checkpoint.lng.toFixed(4) }}E</span>
         </div>
       </div>
     </div>
@@ -184,7 +186,16 @@ const overlayTheme = computed(() => {
   return 'theme-green'
 })
 
+// Tasks require photo proof before the team may advance. Tunable per
+// checkpoint via requirePhoto; defaults to required for task checkpoints so a
+// team can't hold-to-skip a mission without submitting evidence.
+const photoRequired = computed(() =>
+  props.checkpoint.type === 'task' && props.checkpoint.requirePhoto !== false
+)
+const photoGateBlocking = computed(() => photoRequired.value && !photoUploaded.value)
+
 const holdButtonLabel = computed(() => {
+  if (photoGateBlocking.value) return '📷 TA BILD FÖRST'
   if (!isHolding.value) return 'HÅLL INNE FÖR NÄSTA CHECKPOINT'
   const remaining = Math.max(0, Math.ceil((HOLD_MS * (1 - holdProgress.value)) / 1000))
   return `FORTSÄTT HÅLLA ${remaining}s`
@@ -202,6 +213,8 @@ const clearHold = () => {
 const startHold = () => {
   const t = props.checkpoint.type
   if (t !== 'meeting' && t !== 'task') return
+  // Block advancing a photo-required task until the photo has been submitted.
+  if (photoGateBlocking.value) return
   if (holdInterval) return
   isHolding.value = true
   holdStartedAt = Date.now()
@@ -231,20 +244,57 @@ function triggerPhotoPicker() {
   photoInputRef.value?.click()
 }
 
-// Resize the source image to max 1280 px on the long side and re-encode as
-// JPEG ~0.8 quality so a phone photo lands at well under 1 MB on the wire.
-async function resizeImage(file) {
-  const bitmap = await createImageBitmap(file)
+// Draw a decoded source (ImageBitmap or HTMLImageElement) onto a downscaled
+// canvas and return a JPEG data URL ~0.8 quality (well under 1 MB on the wire).
+function drawToJpeg(source, srcW, srcH) {
   const MAX = 1280
-  const scale = Math.min(1, MAX / Math.max(bitmap.width, bitmap.height))
-  const w = Math.round(bitmap.width * scale)
-  const h = Math.round(bitmap.height * scale)
+  const scale = Math.min(1, MAX / Math.max(srcW, srcH))
+  const w = Math.round(srcW * scale)
+  const h = Math.round(srcH * scale)
   const canvas = document.createElement('canvas')
   canvas.width = w
   canvas.height = h
   const ctx = canvas.getContext('2d')
-  ctx.drawImage(bitmap, 0, 0, w, h)
+  ctx.drawImage(source, 0, 0, w, h)
   return canvas.toDataURL('image/jpeg', 0.8)
+}
+
+// Decode via an <img> + object URL. Fallback for browsers/formats where
+// createImageBitmap throws (notably HEIC from iPhones on some Safari builds).
+function resizeViaImageElement(file) {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file)
+    const img = new Image()
+    img.onload = () => {
+      try {
+        const out = drawToJpeg(img, img.naturalWidth, img.naturalHeight)
+        URL.revokeObjectURL(url)
+        resolve(out)
+      } catch (e) {
+        URL.revokeObjectURL(url)
+        reject(e)
+      }
+    }
+    img.onerror = () => {
+      URL.revokeObjectURL(url)
+      reject(new Error('kunde inte avkoda bilden'))
+    }
+    img.src = url
+  })
+}
+
+// Resize the source image to max 1280 px on the long side and re-encode as
+// JPEG. Tries the fast createImageBitmap path, then falls back to an <img>
+// decode so iPhone HEIC photos don't hard-fail the upload.
+async function resizeImage(file) {
+  try {
+    const bitmap = await createImageBitmap(file)
+    const out = drawToJpeg(bitmap, bitmap.width, bitmap.height)
+    bitmap.close?.()
+    return out
+  } catch (_) {
+    return resizeViaImageElement(file)
+  }
 }
 
 async function handlePhotoSelected(event) {
@@ -253,6 +303,10 @@ async function handlePhotoSelected(event) {
   if (!file) return
   if (!props.team) {
     photoError.value = 'Inget lag valt – kan inte ladda upp.'
+    return
+  }
+  if (file.type && !file.type.startsWith('image/')) {
+    photoError.value = 'Filen är inte en bild. Ta ett foto eller välj en bildfil.'
     return
   }
   photoUploading.value = true
@@ -533,6 +587,13 @@ onUnmounted(() => {
 
 .meeting-btn.is-holding {
   background: rgba(255, 204, 0, 0.08);
+}
+
+/* Photo proof not yet submitted — make the confirm button read as inactive. */
+.meeting-btn.is-locked {
+  opacity: 0.45;
+  filter: grayscale(0.6);
+  cursor: not-allowed;
 }
 
 .hold-fill {

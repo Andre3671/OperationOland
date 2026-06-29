@@ -146,7 +146,7 @@ export function useSimulationStore() {
   }
 
   function getTeamPosition(team) {
-    const target = history.value.find((entry) => entry.team.toLowerCase() === (team || '').toLowerCase())
+    const target = history.value.find((entry) => (entry.team || '').toLowerCase() === (team || '').toLowerCase())
     return target?.path?.[target.path.length - 1] || null
   }
 

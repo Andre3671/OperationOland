@@ -382,12 +382,27 @@ onUnmounted(() => {
   position: relative;
   width: 100%;
   max-width: 500px;
+  /* Never taller than the screen (backdrop has 20px padding top+bottom). A long
+     challenge + photo preview used to overflow with overflow:hidden, clipping
+     the continue button off the bottom — now the modal scrolls instead. */
+  max-height: calc(100vh - 40px);
+  max-height: calc(100dvh - 40px);
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
   background: #0a0a0a;
   border: 1px solid rgba(255, 255, 255, 0.1);
   padding: 40px;
   box-shadow: 0 0 50px rgba(0, 0, 0, 0.5);
   font-family: 'JetBrains Mono', 'Courier New', monospace;
-  overflow: hidden;
+}
+
+/* Tighter padding on phones so the content fits without much scrolling. */
+@media (max-height: 740px), (max-width: 420px) {
+  .modal-backdrop { padding: 10px; }
+  .modal-content { padding: 24px 20px; max-height: calc(100vh - 20px); max-height: calc(100dvh - 20px); }
+  .modal-header { margin-bottom: 16px; }
+  .mission-title { margin-bottom: 12px; }
+  .alert-icon { font-size: 2.2rem; }
 }
 
 /* Themes */

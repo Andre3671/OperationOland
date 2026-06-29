@@ -589,6 +589,10 @@ function sendTeamChat() {
   position: fixed;
   bottom: 20px;
   left: 20px;
+  /* Cap the width to the screen so a long checkpoint name + tags can't run off
+     the right edge; the value column wraps instead. */
+  max-width: calc(100vw - 40px);
+  box-sizing: border-box;
   background: rgba(0, 0, 0, 0.8);
   border: 1px solid #333;
   padding: 10px;
@@ -607,11 +611,14 @@ function sendTeamChat() {
 
 .debug-label {
   color: #555;
-  width: 60px;
+  flex: 0 0 60px;
 }
 
 .debug-value {
   color: #00ff00;
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .target-name {
@@ -786,7 +793,7 @@ function sendTeamChat() {
   background: #0a0a0a;
   display: flex;
   align-items: center;
-  justify-content: center;
+  justify-content: safe center;
   z-index: 5000;
   padding: 20px;
   box-sizing: border-box;

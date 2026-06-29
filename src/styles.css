@@ -49,7 +49,8 @@ body{
 .status-warn{color:#ff0000;}
 .live-tooltip{color:#00ff00 !important; background:rgba(0,0,0,0.75) !important; border:none !important; font-family: inherit !important;}
 .overlay-full{
-  position:fixed;inset:0;display:flex;align-items:center;justify-content:center;flex-direction:column;padding:24px;z-index:2000;color:#000;
+  position:fixed;inset:0;display:flex;align-items:center;justify-content:safe center;flex-direction:column;padding:24px;z-index:2000;color:#000;
+  box-sizing:border-box;overflow-y:auto;
 }
 .overlay-red{background:var(--warn);color:#fff}
 .overlay-green{background:var(--neon);color:#000}

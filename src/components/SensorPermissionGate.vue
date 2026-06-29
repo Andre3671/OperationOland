@@ -214,7 +214,7 @@ onBeforeUnmount(() => {
   background: #0a0a0a;
   display: flex;
   align-items: center;
-  justify-content: center;
+  justify-content: safe center;
   z-index: 2050;
   font-family: 'JetBrains Mono', 'Courier New', monospace;
   color: #00ccff;

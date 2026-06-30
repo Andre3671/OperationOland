@@ -219,7 +219,17 @@
 
       <!-- Checkpoint Section -->
       <div class="checkpoint-section">
-        <div class="section-title">CHECKPOINTS</div>
+        <div class="section-title-row">
+          <div class="section-title">CHECKPOINTS</div>
+          <button
+            class="export-cp-btn"
+            :disabled="checkpoints.length === 0"
+            @click="exportCheckpoints"
+            title="Kopiera lista (namn, koordinater, radie) för att generera uppdrag"
+          >
+            {{ exportCopied ? '✓ KOPIERAD' : 'EXPORTERA' }}
+          </button>
+        </div>
         <div class="checkpoint-list">
           <div v-if="checkpointsByTeam.length === 0" class="checkpoint-empty">Inga checkpoints ännu.</div>
           <div v-for="group in checkpointsByTeam" :key="group.team" class="team-group" :style="{ '--team-color': group.meta.color }">
@@ -562,6 +572,45 @@ const checkpointsByTeam = computed(() => {
       items: list,
     }))
 })
+
+const exportCopied = ref(false)
+
+// Plain-text list (grouped per team) of name, coordinates and geofence radius,
+// formatted to paste straight into a task-generation prompt.
+function buildCheckpointExport() {
+  const lines = []
+  for (const group of checkpointsByTeam.value) {
+    lines.push(`=== ${group.meta.label} ===`)
+    group.items.forEach((cp, idx) => {
+      const name = (cp.name || cp.title || 'Checkpoint').trim()
+      const radius = cp.radius || 500
+      lines.push(`${idx + 1}. ${name} | ${cp.lat.toFixed(5)}, ${cp.lng.toFixed(5)} | radie ${radius} m`)
+    })
+    lines.push('')
+  }
+  return lines.join('\n').trim()
+}
+
+async function exportCheckpoints() {
+  const text = buildCheckpointExport()
+  if (!text) return
+  try {
+    await navigator.clipboard.writeText(text)
+  } catch {
+    // Clipboard API fails in insecure contexts / when blocked — fall back to a
+    // hidden textarea so the admin still gets the list copied.
+    const ta = document.createElement('textarea')
+    ta.value = text
+    ta.style.position = 'fixed'
+    ta.style.opacity = '0'
+    document.body.appendChild(ta)
+    ta.select()
+    try { document.execCommand('copy') } catch { /* nothing more we can do */ }
+    document.body.removeChild(ta)
+  }
+  exportCopied.value = true
+  setTimeout(() => { exportCopied.value = false }, 2000)
+}
 
 const editingId = ref(null)
 const editDraft = ref({ name: '', challenge: '', timeToNext: 0 })
@@ -1009,6 +1058,40 @@ const toggleSharedSimulation = () => {
   font-weight: 700;
   margin-bottom: 15px;
   color: #888;
+}
+
+.section-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.section-title-row .section-title {
+  margin-bottom: 15px;
+}
+
+.export-cp-btn {
+  background: rgba(0, 204, 255, 0.08);
+  color: #00ccff;
+  border: 1px solid rgba(0, 204, 255, 0.35);
+  padding: 5px 10px;
+  margin-bottom: 15px;
+  cursor: pointer;
+  font-family: inherit;
+  font-weight: 700;
+  font-size: 0.68rem;
+  letter-spacing: 0.08em;
+  border-radius: 4px;
+  white-space: nowrap;
+  transition: background 0.15s, border-color 0.15s;
+}
+.export-cp-btn:hover:not(:disabled) {
+  background: rgba(0, 204, 255, 0.18);
+  border-color: #00ccff;
+}
+.export-cp-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
 }
 
 .checkpoint-empty {

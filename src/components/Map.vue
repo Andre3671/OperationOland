@@ -134,7 +134,7 @@ onBeforeUnmount(()=>{
 }
 .layer-toggle {
   position: absolute;
-  top: 12px;
+  top: 72px;
   left: 12px;
   z-index: 900;
   background: rgba(0, 0, 0, 0.75);

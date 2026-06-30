@@ -10,6 +10,9 @@
 <script setup>
 import { onMounted, onBeforeUnmount, ref, nextTick, watch, computed } from 'vue'
 import L from 'leaflet'
+import { useSimulationStore, WALKING_RADIUS_M } from '../store/simulationStore'
+
+const { walkingMode } = useSimulationStore()
 
 const props = defineProps({
   center: { type: Array, required: false, default: () => [56.8, 16.6] },
@@ -70,8 +73,24 @@ function drawTacticalData() {
   const cp = props.checkpoints[props.activeIndex]
   if (cp) {
     const targetName = cp.name || cp.title || 'Checkpoint'
+
+    // Real-world geofence "zone": a circle measured in metres (so it scales
+    // with zoom) using the same radius the arrival check uses, so what the
+    // navigator sees matches when they'll actually trigger the checkpoint.
+    const geofenceRadius = walkingMode.value ? WALKING_RADIUS_M : (cp.radius || 500)
+    L.circle([cp.lat, cp.lng], {
+      radius: geofenceRadius,
+      color: props.teamColor,
+      weight: 2,
+      opacity: 0.7,
+      fillColor: props.teamColor,
+      fillOpacity: 0.12,
+      dashArray: '6 6',
+      interactive: false,
+    }).addTo(checkpointLayer)
+
+    // Fixed-size marker dot, independent of zoom.
     const html = `<div class="next-checkpoint-marker" style="--team-color:${props.teamColor}">
-         <div class="next-checkpoint-pulse"></div>
          <div class="next-checkpoint-dot">${props.activeIndex + 1}</div>
        </div>`
 
@@ -87,7 +106,7 @@ function drawTacticalData() {
   }
 }
 
-watch(() => [props.idealRoute, props.checkpoints, props.activeIndex], () => {
+watch(() => [props.idealRoute, props.checkpoints, props.activeIndex, walkingMode.value], () => {
   drawTacticalData()
 }, { deep: true })
 

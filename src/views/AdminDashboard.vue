@@ -221,14 +221,37 @@
       <div class="checkpoint-section">
         <div class="section-title-row">
           <div class="section-title">CHECKPOINTS</div>
-          <button
-            class="export-cp-btn"
-            :disabled="checkpoints.length === 0"
-            @click="exportCheckpoints"
-            title="Kopiera lista (namn, koordinater, radie) för att generera uppdrag"
-          >
-            {{ exportCopied ? '✓ KOPIERAD' : 'EXPORTERA' }}
-          </button>
+          <div class="cp-actions">
+            <button
+              class="export-cp-btn"
+              :class="{ 'is-active': importOpen }"
+              :disabled="checkpoints.length === 0"
+              @click="toggleImport"
+              title="Klistra in namn och beskrivningar (per lag, numrerade) för att uppdatera checkpoints"
+            >
+              IMPORTERA
+            </button>
+            <button
+              class="export-cp-btn"
+              :disabled="checkpoints.length === 0"
+              @click="exportCheckpoints"
+              title="Kopiera lista (namn, koordinater, radie) för att generera uppdrag"
+            >
+              {{ exportCopied ? '✓ KOPIERAD' : 'EXPORTERA' }}
+            </button>
+          </div>
+        </div>
+        <div v-if="importOpen" class="cp-import-panel">
+          <textarea
+            v-model="importText"
+            class="cp-import-textarea"
+            rows="8"
+            placeholder="=== ALPHA ===&#10;1. Kalmar Slott | Lös gåtan vid porten...&#10;2. Hamnen | Hitta den röda bojen..."
+          ></textarea>
+          <div class="cp-import-row">
+            <button class="export-cp-btn" :disabled="!importText.trim()" @click="applyCheckpointImport">TILLÄMPA</button>
+            <span v-if="importMsg" class="cp-import-msg">{{ importMsg }}</span>
+          </div>
         </div>
         <div class="checkpoint-list">
           <div v-if="checkpointsByTeam.length === 0" class="checkpoint-empty">Inga checkpoints ännu.</div>
@@ -610,6 +633,104 @@ async function exportCheckpoints() {
   }
   exportCopied.value = true
   setTimeout(() => { exportCopied.value = false }, 2000)
+}
+
+// ---- checkpoint import ----
+//
+// Mirror of the export: paste back a per-team, numbered list to bulk-set
+// checkpoint names and challenge descriptions. Coordinates and radius are
+// never touched — only text. Rows are matched by team group + the number
+// shown in the list (same numbering the export produces).
+const importOpen = ref(false)
+const importText = ref('')
+const importMsg = ref('')
+
+function toggleImport() {
+  importOpen.value = !importOpen.value
+  if (!importOpen.value) importMsg.value = ''
+}
+
+// Parse pasted text into { label, index, name, description } entries.
+// A "=== Label ===" line switches the active team; a "N." line starts
+// checkpoint N. Text after an optional "|" on that line, plus any following
+// unnumbered lines, becomes the description — so multi-line tasks paste in.
+function parseCheckpointImport(text) {
+  const entries = []
+  let currentLabel = null
+  let current = null
+  const flush = () => {
+    if (current) {
+      current.description = current.description.join('\n').trim()
+      entries.push(current)
+      current = null
+    }
+  }
+  for (const raw of (text || '').split(/\r?\n/)) {
+    const line = raw.trim()
+    const header = line.match(/^={2,}\s*(.+?)\s*={2,}$/)
+    if (header) {
+      flush()
+      currentLabel = header[1].trim()
+      continue
+    }
+    const numbered = line.match(/^(\d+)\s*[.)]\s*(.*)$/)
+    if (numbered) {
+      flush()
+      const rest = numbered[2]
+      const pipe = rest.indexOf('|')
+      const name = (pipe >= 0 ? rest.slice(0, pipe) : rest).trim()
+      const inlineDesc = pipe >= 0 ? rest.slice(pipe + 1).trim() : ''
+      current = {
+        label: currentLabel,
+        index: Number(numbered[1]),
+        name,
+        description: inlineDesc ? [inlineDesc] : [],
+      }
+      continue
+    }
+    if (current && line) current.description.push(line)
+  }
+  flush()
+  return entries
+}
+
+function applyCheckpointImport() {
+  const entries = parseCheckpointImport(importText.value)
+  if (entries.length === 0) {
+    importMsg.value = 'Hittade inget att importera.'
+    return
+  }
+  // Snapshot the grouping up front. updateCheckpoint reassigns the list, but
+  // we resolve everything against stable checkpoint ids from this snapshot.
+  const groups = checkpointsByTeam.value
+  const titleByType = { meeting: 'ÅTERSAMLING', start: 'STARTPUNKT', finish: 'MÅLLINJE' }
+  let updated = 0
+  const misses = []
+  for (const entry of entries) {
+    let group = null
+    if (entry.label) {
+      const key = entry.label.toLowerCase()
+      group = groups.find(g => g.meta.label.toLowerCase() === key || g.team.toLowerCase() === key)
+    } else if (groups.length === 1) {
+      group = groups[0]
+    }
+    if (!group) { misses.push(`${entry.label || '?'} #${entry.index}`); continue }
+    const cp = group.items[entry.index - 1]
+    if (!cp) { misses.push(`${group.meta.label} #${entry.index}`); continue }
+    const patch = {}
+    if (entry.name) {
+      patch.name = entry.name
+      patch.title = titleByType[cp.type] || `Uppdrag: ${entry.name}`
+    }
+    if (entry.description) patch.challenge = entry.description
+    if (Object.keys(patch).length === 0) continue
+    updateCheckpoint(cp.id, patch)
+    updated++
+  }
+  let msg = `${updated} checkpoint${updated === 1 ? '' : 's'} uppdaterade.`
+  if (misses.length) msg += ` Hittade ej: ${misses.join(', ')}.`
+  importMsg.value = msg
+  if (updated > 0) importText.value = ''
 }
 
 const editingId = ref(null)
@@ -1092,6 +1213,50 @@ const toggleSharedSimulation = () => {
 .export-cp-btn:disabled {
   opacity: 0.4;
   cursor: not-allowed;
+}
+.export-cp-btn.is-active {
+  background: rgba(0, 204, 255, 0.22);
+  border-color: #00ccff;
+}
+
+.cp-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.cp-import-panel {
+  margin-bottom: 14px;
+}
+
+.cp-import-textarea {
+  width: 100%;
+  box-sizing: border-box;
+  background: #111;
+  color: #eee;
+  border: 1px solid rgba(0, 204, 255, 0.35);
+  border-radius: 4px;
+  padding: 8px 10px;
+  font-family: inherit;
+  font-size: 0.78rem;
+  line-height: 1.4;
+  resize: vertical;
+}
+.cp-import-textarea:focus {
+  outline: none;
+  border-color: #00ccff;
+}
+
+.cp-import-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.cp-import-msg {
+  font-size: 0.72rem;
+  color: #9fd8e6;
 }
 
 .checkpoint-empty {

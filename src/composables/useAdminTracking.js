@@ -388,15 +388,32 @@ export function useAdminTracking() {
     `
 
     try {
-      const data = await fetchWithRetry(
+      // The main Overpass instance 504s under load fairly often; try the
+      // Kumi Systems mirror before giving up on a hub entirely.
+      const OVERPASS_ENDPOINTS = [
         'https://overpass-api.de/api/interpreter',
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-          body: `data=${encodeURIComponent(query)}`,
-        },
-        1
-      )
+        'https://overpass.kumi.systems/api/interpreter',
+      ]
+      let data = null
+      let lastError = null
+      for (const endpoint of OVERPASS_ENDPOINTS) {
+        try {
+          data = await fetchWithRetry(
+            endpoint,
+            {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+              body: `data=${encodeURIComponent(query)}`,
+            },
+            1
+          )
+          break
+        } catch (e) {
+          lastError = e
+          console.warn(`[Meeting] Overpass ${endpoint} failed, trying next mirror...`)
+        }
+      }
+      if (!data) throw lastError || new Error('all Overpass endpoints failed')
 
       const elements = Array.isArray(data?.elements) ? data.elements : []
       const places = []
@@ -447,6 +464,33 @@ export function useAdminTracking() {
     }
   }
 
+  // Fallback road router: the public OSRM instance run by FOSSGIS. No key
+  // needed. Used when ORS is down (its API has real outages) or no ORS key is
+  // configured. Same return shape as the ORS path below: [lat,lng] coords
+  // with distanceMeters / durationSeconds / segments attached. Caveat: OSRM
+  // has no avoid-highways option, so fallback routes may use motorways.
+  async function fetchOsrmRoute(validPoints, walking) {
+    const base = walking
+      ? 'https://routing.openstreetmap.de/routed-foot'
+      : 'https://routing.openstreetmap.de/routed-car'
+    const coordsStr = validPoints.map(w => `${w[1]},${w[0]}`).join(';')
+    const url = `${base}/route/v1/${walking ? 'foot' : 'driving'}/${coordsStr}?overview=full&geometries=geojson&steps=false`
+    const res = await fetch(url)
+    if (!res.ok) throw new Error(`OSRM ${res.status}`)
+    const data = await res.json()
+    const route = data && data.routes && data.routes[0]
+    if (!route || !route.geometry || !Array.isArray(route.geometry.coordinates)) {
+      throw new Error(`OSRM: no route (${data?.code || 'empty response'})`)
+    }
+    const coords = route.geometry.coordinates.map(c => [c[1], c[0]])
+    coords.distanceMeters = route.distance
+    coords.durationSeconds = route.duration
+    coords.segments = Array.isArray(route.legs)
+      ? route.legs.map(l => ({ distance: l.distance, duration: l.duration }))
+      : []
+    return coords
+  }
+
   async function fetchRoadRoute(waypoints) {
     if (!waypoints || waypoints.length < 2) return []
     const validPoints = waypoints.filter(w => w && Number.isFinite(w[0]) && Number.isFinite(w[1]))
@@ -454,8 +498,13 @@ export function useAdminTracking() {
 
     const apiKey = import.meta.env.VITE_ORS_API_KEY
     if (!apiKey) {
-      console.warn("[Routing] VITE_ORS_API_KEY is not set — using straight-line fallback. See .env.example.")
-      return validPoints
+      console.warn('[Routing] VITE_ORS_API_KEY is not set — trying OSRM fallback. See .env.example.')
+      try {
+        return await fetchOsrmRoute(validPoints, walkingMode.value)
+      } catch (e) {
+        console.warn('[Routing] OSRM fallback failed, using straight-line fallback:', e)
+        return validPoints
+      }
     }
 
     try {
@@ -503,8 +552,13 @@ export function useAdminTracking() {
       coords.segments = feature.properties && feature.properties.segments ? feature.properties.segments : []
       return coords
     } catch (e) {
-      console.warn("[Routing] Road-following failed, using straight-line fallback:", e)
-      return validPoints
+      console.warn('[Routing] ORS failed, trying OSRM fallback:', e)
+      try {
+        return await fetchOsrmRoute(validPoints, walkingMode.value)
+      } catch (e2) {
+        console.warn('[Routing] OSRM fallback failed too, using straight-line fallback:', e2)
+        return validPoints
+      }
     }
   }
 

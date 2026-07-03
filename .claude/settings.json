@@ -4,7 +4,17 @@
       "Bash(git -C \"c:/Users/babyb/Desktop/Projekt/OperationOland\" log --oneline -15)",
       "Read(//c/Users/babyb/AppData/Local/Temp/claude/**)",
       "Bash(node -e ' *)",
-      "Bash(node --check server/src/index.js)"
+      "Bash(node --check server/src/index.js)",
+      "Bash(nslookup api.openrouteservice.org)",
+      "Bash(curl -sS -o /dev/null -w \"ORS status: %{http_code} \\(connect %{time_connect}s\\)\\\\n\" --max-time 15 https://api.openrouteservice.org/v2/directions/driving-car)",
+      "Bash(curl -sS -o /dev/null -w \"overpass: %{http_code}\\\\n\" --max-time 15 https://overpass-api.de/api/status)",
+      "Bash(curl -sS -o /dev/null -w \"openrouteservice.org: %{http_code}\\\\n\" --max-time 15 https://openrouteservice.org)",
+      "Bash(curl -sS -o /dev/null -w \"status page: %{http_code}\\\\n\" --max-time 15 https://status.openrouteservice.org)",
+      "WebFetch(domain:status.openrouteservice.org)",
+      "Bash(curl -sS --max-time 20 \"https://routing.openstreetmap.de/routed-car/route/v1/driving/16.3562,56.6635;16.68,56.85?overview=full&geometries=geojson&steps=false\")",
+      "Bash(node -e \"let d='';process.stdin.on\\('data',c=>d+=c\\).on\\('end',\\(\\)=>{const j=JSON.parse\\(d\\);const r=j.routes&&j.routes[0];console.log\\('code:',j.code\\);console.log\\('distance m:',r&&r.distance,'duration s:',r&&r.duration\\);console.log\\('geometry pts:',r&&r.geometry.coordinates.length\\);console.log\\('legs:',r&&r.legs.map\\(l=>\\({distance:l.distance,duration:l.duration}\\)\\)\\);}\\)\")",
+      "Bash(curl -sS --max-time 20 \"https://routing.openstreetmap.de/routed-foot/route/v1/foot/16.3562,56.6635;16.36,56.67;16.37,56.68?overview=full&geometries=geojson&steps=false\")",
+      "Bash(node -e \"let d='';process.stdin.on\\('data',c=>d+=c\\).on\\('end',\\(\\)=>{const j=JSON.parse\\(d\\);const r=j.routes&&j.routes[0];console.log\\('foot code:',j.code,'legs:',r&&r.legs.length,'durations:',r&&r.legs.map\\(l=>Math.round\\(l.duration\\)\\)\\)}\\)\")"
     ]
   }
 }

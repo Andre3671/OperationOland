@@ -227,7 +227,7 @@
               :class="{ 'is-active': importOpen }"
               :disabled="checkpoints.length === 0"
               @click="toggleImport"
-              title="Klistra in namn och beskrivningar (per lag, numrerade) för att uppdatera checkpoints"
+              title="Klistra in namn, beskrivningar, koordinater (lat, lng) och radie (per lag, numrerade) för att uppdatera checkpoints"
             >
               IMPORTERA
             </button>
@@ -246,7 +246,7 @@
             v-model="importText"
             class="cp-import-textarea"
             rows="8"
-            placeholder="=== ALPHA ===&#10;1. Kalmar Slott | Lös gåtan vid porten...&#10;2. Hamnen | Hitta den röda bojen..."
+            placeholder="=== ALPHA ===&#10;1. Kalmar Slott | 56.66459, 16.35528 | radie 500 m | Lös gåtan vid porten...&#10;2. Hamnen | Hitta den röda bojen...&#10;56.67012, 16.36244"
           ></textarea>
           <div class="cp-import-row">
             <button class="export-cp-btn" :disabled="!importText.trim()" @click="applyCheckpointImport">TILLÄMPA</button>
@@ -638,9 +638,11 @@ async function exportCheckpoints() {
 // ---- checkpoint import ----
 //
 // Mirror of the export: paste back a per-team, numbered list to bulk-set
-// checkpoint names and challenge descriptions. Coordinates and radius are
-// never touched — only text. Rows are matched by team group + the number
-// shown in the list (same numbering the export produces).
+// checkpoint names, challenge descriptions, coordinates and radius. A
+// "lat, lng" segment (or a bare coordinate line pasted from Google Maps)
+// moves the checkpoint; "radie 500 m" resizes its geofence. Rows are
+// matched by team group + the number shown in the list (same numbering
+// the export produces).
 const importOpen = ref(false)
 const importText = ref('')
 const importMsg = ref('')
@@ -650,10 +652,34 @@ function toggleImport() {
   if (!importOpen.value) importMsg.value = ''
 }
 
-// Parse pasted text into { label, index, name, description } entries.
-// A "=== Label ===" line switches the active team; a "N." line starts
-// checkpoint N. Text after an optional "|" on that line, plus any following
-// unnumbered lines, becomes the description — so multi-line tasks paste in.
+// "57.12345, 16.54321" — decimal degrees, the format Google Maps copies and
+// the export produces. Bounds-checked so a stray "12, 14" task numbering
+// can't teleport a checkpoint to the Gulf of Guinea.
+function parseCoordPair(text) {
+  const m = (text || '').trim().match(/^(-?\d{1,2}\.\d+)\s*,\s*(-?\d{1,3}\.\d+)$/)
+  if (!m) return null
+  const lat = parseFloat(m[1])
+  const lng = parseFloat(m[2])
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null
+  if (Math.abs(lat) > 90 || Math.abs(lng) > 180) return null
+  return { lat, lng }
+}
+
+// "radie 500 m", "radius 500", or "500 m" — geofence radius in metres.
+function parseRadius(text) {
+  const t = (text || '').trim()
+  const m = t.match(/^rad(?:ie|ius)\s*:?\s*(\d+)\s*m?$/i) || t.match(/^(\d+)\s*m$/i)
+  if (!m) return null
+  const r = parseInt(m[1], 10)
+  return Number.isFinite(r) && r > 0 ? r : null
+}
+
+// Parse pasted text into { label, index, name, coords, radius, description }
+// entries. A "=== Label ===" line switches the active team; a "N." line
+// starts checkpoint N. Segments after "|" on that line are recognised as
+// coordinates or radius, anything else joins the description. Following
+// unnumbered lines extend the description — except a bare coordinate line
+// (pasted straight from Google Maps), which sets the position.
 function parseCheckpointImport(text) {
   const entries = []
   let currentLabel = null
@@ -664,6 +690,13 @@ function parseCheckpointImport(text) {
       entries.push(current)
       current = null
     }
+  }
+  const absorbSegment = (segment) => {
+    const coords = parseCoordPair(segment)
+    if (coords && !current.coords) { current.coords = coords; return }
+    const radius = parseRadius(segment)
+    if (radius && !current.radius) { current.radius = radius; return }
+    if (segment) current.description.push(segment)
   }
   for (const raw of (text || '').split(/\r?\n/)) {
     const line = raw.trim()
@@ -676,19 +709,19 @@ function parseCheckpointImport(text) {
     const numbered = line.match(/^(\d+)\s*[.)]\s*(.*)$/)
     if (numbered) {
       flush()
-      const rest = numbered[2]
-      const pipe = rest.indexOf('|')
-      const name = (pipe >= 0 ? rest.slice(0, pipe) : rest).trim()
-      const inlineDesc = pipe >= 0 ? rest.slice(pipe + 1).trim() : ''
+      const segments = numbered[2].split('|').map(s => s.trim())
       current = {
         label: currentLabel,
         index: Number(numbered[1]),
-        name,
-        description: inlineDesc ? [inlineDesc] : [],
+        name: segments[0] || '',
+        coords: null,
+        radius: null,
+        description: [],
       }
+      for (const segment of segments.slice(1)) absorbSegment(segment)
       continue
     }
-    if (current && line) current.description.push(line)
+    if (current && line) absorbSegment(line)
   }
   flush()
   return entries
@@ -705,6 +738,8 @@ function applyCheckpointImport() {
   const groups = checkpointsByTeam.value
   const titleByType = { meeting: 'ÅTERSAMLING', start: 'STARTPUNKT', finish: 'MÅLLINJE' }
   let updated = 0
+  let moved = 0
+  let coordSkipped = 0
   const misses = []
   for (const entry of entries) {
     let group = null
@@ -723,11 +758,24 @@ function applyCheckpointImport() {
       patch.title = titleByType[cp.type] || `Uppdrag: ${entry.name}`
     }
     if (entry.description) patch.challenge = entry.description
+    if (entry.coords) {
+      // Start/finish stay glued to the global axis markers (drag those on the
+      // map instead) — moving one team's copy here would desync the rest.
+      if (cp.type === 'start' || cp.type === 'finish') {
+        coordSkipped++
+      } else {
+        patch.lat = entry.coords.lat
+        patch.lng = entry.coords.lng
+        moved++
+      }
+    }
+    if (entry.radius) patch.radius = entry.radius
     if (Object.keys(patch).length === 0) continue
     updateCheckpoint(cp.id, patch)
     updated++
   }
-  let msg = `${updated} checkpoint${updated === 1 ? '' : 's'} uppdaterade.`
+  let msg = `${updated} checkpoint${updated === 1 ? '' : 's'} uppdaterade${moved ? ` (${moved} flyttade)` : ''}.`
+  if (coordSkipped) msg += ` Start/mål flyttas via kartan — ${coordSkipped} koordinat${coordSkipped === 1 ? '' : 'er'} ignorerade.`
   if (misses.length) msg += ` Hittade ej: ${misses.join(', ')}.`
   importMsg.value = msg
   if (updated > 0) importText.value = ''

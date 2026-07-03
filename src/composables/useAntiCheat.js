@@ -4,6 +4,15 @@ import { useSimulationStore } from '../store/simulationStore'
 // Grace period before a backgrounded app is treated as cheating (ms).
 const BACKGROUND_GRACE_MS = 25000
 
+// Short lock: enough to sting and get logged, not enough to derail the game.
+// The offense (+1) and the locked seconds still land in teamCheating and the
+// scoreboard.
+const PENALTY_MS = 30_000
+// Ship accumulated cheat-seconds in chunks instead of one POST per second —
+// per-second requests (each triggering a full-state broadcast to every
+// client) melted the sync loop.
+const CHEAT_FLUSH_INTERVAL_S = 15
+
 export function useAntiCheat(teamNameSource, disabledSource = false){
   const { registerCheating } = useSimulationStore()
   const locked = ref(false)
@@ -11,14 +20,27 @@ export function useAntiCheat(teamNameSource, disabledSource = false){
   let visibilityTimer = null
   let penaltyInterval = null
   let wakeLock = null
+  let disposed = false
 
   async function requestWakeLock(){
+    if (disposed || !('wakeLock' in navigator)) return
     try{
-      if ('wakeLock' in navigator) wakeLock = await navigator.wakeLock.request('screen')
+      wakeLock = await navigator.wakeLock.request('screen')
+      // The browser releases the lock whenever the page is hidden; re-request
+      // as soon as we're visible again so screens keep staying awake for the
+      // whole trip (a re-request while hidden just rejects).
+      wakeLock.addEventListener('release', () => {
+        wakeLock = null
+        if (!disposed && !document.hidden) requestWakeLock()
+      })
     }catch(e){
-      // ignore
+      wakeLock = null
     }
   }
+
+  // Flushes cheat-seconds accrued since the last flush. Set while a penalty
+  // is running so abortPenalty can settle the remainder.
+  let flushPenaltySeconds = null
 
   function startPenalty(){
     if (toValue(disabledSource)) return
@@ -26,26 +48,44 @@ export function useAntiCheat(teamNameSource, disabledSource = false){
     if (!team) return
 
     locked.value = true
-    penaltySeconds.value = 300 // 5 minute penalty
-    
+    const startedAt = Date.now()
+    const endsAt = startedAt + PENALTY_MS
+    penaltySeconds.value = Math.ceil(PENALTY_MS / 1000)
+
     // Increment offense count (passing 0 seconds just to trigger the +1 offense)
     registerCheating(team, 0)
-    
+
+    let flushedSeconds = 0
+    flushPenaltySeconds = (final = false) => {
+      const elapsed = Math.min(PENALTY_MS, Date.now() - startedAt)
+      const elapsedSeconds = Math.round(elapsed / 1000)
+      const delta = elapsedSeconds - flushedSeconds
+      if (delta > 0 && (final || delta >= CHEAT_FLUSH_INTERVAL_S)) {
+        flushedSeconds = elapsedSeconds
+        registerCheating(team, delta)
+      }
+    }
+
     if (penaltyInterval) clearInterval(penaltyInterval)
-    
+
+    // Wall-clock based: background tabs throttle timers hard, so counting
+    // interval ticks would stretch the lock far beyond its intended length.
     penaltyInterval = setInterval(() => {
-      if (penaltySeconds.value > 0) {
-        penaltySeconds.value -= 1
-        // Log the second of cheating time
-        registerCheating(team, 1)
-      } else {
+      const remaining = Math.max(0, Math.ceil((endsAt - Date.now()) / 1000))
+      penaltySeconds.value = remaining
+      flushPenaltySeconds?.(remaining === 0)
+      if (remaining === 0) {
         clearInterval(penaltyInterval)
+        penaltyInterval = null
+        flushPenaltySeconds = null
         locked.value = false
       }
     }, 1000)
   }
 
   function abortPenalty(){
+    flushPenaltySeconds?.(true)
+    flushPenaltySeconds = null
     if (penaltyInterval){ clearInterval(penaltyInterval); penaltyInterval = null }
     penaltySeconds.value = 0
     locked.value = false
@@ -63,6 +103,9 @@ export function useAntiCheat(teamNameSource, disabledSource = false){
       }, BACKGROUND_GRACE_MS)
     } else {
       if (visibilityTimer){ clearTimeout(visibilityTimer); visibilityTimer = null }
+      // Coming back to the foreground: the wake lock was auto-released when
+      // the page hid, so grab it again.
+      if (!wakeLock) requestWakeLock()
     }
   }
 
@@ -71,7 +114,7 @@ export function useAntiCheat(teamNameSource, disabledSource = false){
     // Disabling means the player is legitimately at a checkpoint/meeting.
     // Cancel a pending trigger AND abort any penalty already running, otherwise
     // it keeps charging cheat-seconds and locks them out of the very checkpoint
-    // they just reached for the full 5 minutes.
+    // they just reached.
     if (visibilityTimer){ clearTimeout(visibilityTimer); visibilityTimer = null }
     if (penaltyInterval || locked.value) abortPenalty()
   })
@@ -79,14 +122,14 @@ export function useAntiCheat(teamNameSource, disabledSource = false){
   onMounted(()=>{
     requestWakeLock()
     document.addEventListener('visibilitychange', handleVisibility)
-    if (wakeLock && 'addEventListener' in wakeLock){
-      wakeLock.addEventListener('release', ()=>{ requestWakeLock() })
-    }
   })
 
   onBeforeUnmount(()=>{
+    disposed = true
     document.removeEventListener('visibilitychange', handleVisibility)
     if (visibilityTimer){ clearTimeout(visibilityTimer); visibilityTimer = null }
+    flushPenaltySeconds?.(true)
+    flushPenaltySeconds = null
     if (penaltyInterval) clearInterval(penaltyInterval)
     if (wakeLock && typeof wakeLock.release === 'function') wakeLock.release().catch(()=>{})
   })

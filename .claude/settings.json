@@ -3,7 +3,8 @@
     "allow": [
       "Bash(git -C \"c:/Users/babyb/Desktop/Projekt/OperationOland\" log --oneline -15)",
       "Read(//c/Users/babyb/AppData/Local/Temp/claude/**)",
-      "Bash(node -e ' *)"
+      "Bash(node -e ' *)",
+      "Bash(node --check server/src/index.js)"
     ]
   }
 }

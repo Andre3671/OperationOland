@@ -21,16 +21,6 @@ function teamCheckpointsFor(team, allCheckpoints) {
   return (allCheckpoints || []).filter(cp => (cp.team || '').toLowerCase() === key)
 }
 
-function lastArrivalTimestamp(arrivalLog, team, checkpointId) {
-  const key = (team || '').toLowerCase()
-  // arrivalLog is newest-first; the latest entry for a (team, checkpoint) is
-  // the one we want.
-  for (const entry of arrivalLog) {
-    if (entry.team === key && entry.checkpointId === checkpointId) return entry.timestamp
-  }
-  return null
-}
-
 export function computeTeamScore(team, state) {
   const checkpoints = teamCheckpointsFor(team, state.checkpoints)
   const progress = Number(state.teamProgress?.[team] || 0)

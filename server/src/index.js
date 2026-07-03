@@ -20,6 +20,15 @@ mkdirSync(dirname(DB_PATH), { recursive: true })
 const db = new Database(DB_PATH)
 db.pragma('journal_mode = WAL')
 db.exec(`CREATE TABLE IF NOT EXISTS kv (key TEXT PRIMARY KEY, value TEXT NOT NULL)`)
+// Photos live OUTSIDE the state blob. The blob is broadcast to every client
+// on every commit, so multi-MB base64 images in arrivalLog would turn each
+// GPS tick into a multi-MB push to every phone. arrivalLog carries a photoId;
+// clients fetch the bytes lazily via GET /api/photo/:id.
+db.exec(`CREATE TABLE IF NOT EXISTS photos (
+  id TEXT PRIMARY KEY,
+  data TEXT NOT NULL,
+  created_at INTEGER NOT NULL
+)`)
 
 // Mirrors src/lib/teamSlots.js — kept in sync by hand so the server has no
 // build step. If you add a slot there, add it here.
@@ -69,6 +78,28 @@ function defaultState() {
 
 const WALKING_RADIUS_M = 50
 
+const insertPhoto = db.prepare(`INSERT INTO photos (id, data, created_at) VALUES (?, ?, ?)
+  ON CONFLICT(id) DO UPDATE SET data = excluded.data, created_at = excluded.created_at`)
+const selectPhoto = db.prepare(`SELECT data FROM photos WHERE id = ?`)
+const clearPhotos = db.prepare(`DELETE FROM photos`)
+
+// One-time migration: older blobs stored the photo data URL inline on each
+// arrival entry. Hoist those into the photos table so they stop riding along
+// in every broadcast.
+function migrateInlinePhotos(state) {
+  if (!Array.isArray(state.arrivalLog)) return false
+  let changed = false
+  state.arrivalLog = state.arrivalLog.map((entry) => {
+    if (!entry || typeof entry.photo !== 'string' || !entry.photo.startsWith('data:image/')) return entry
+    const photoId = entry.id || `${entry.team}-${entry.checkpointId}-${entry.timestamp}`
+    insertPhoto.run(photoId, entry.photo, entry.photoAt || Date.now())
+    const { photo, ...rest } = entry
+    changed = true
+    return { ...rest, photoId }
+  })
+  return changed
+}
+
 function loadState() {
   const row = db.prepare(`SELECT value FROM kv WHERE key = 'state'`).get()
   if (!row) {
@@ -78,7 +109,9 @@ function loadState() {
   }
   try {
     const parsed = JSON.parse(row.value)
-    return { ...defaultState(), ...parsed }
+    const merged = { ...defaultState(), ...parsed }
+    if (migrateInlinePhotos(merged)) saveState(merged)
+    return merged
   } catch (e) {
     console.warn('[sync] state.db blob unparseable, resetting:', e)
     const fresh = defaultState()
@@ -138,7 +171,7 @@ function calcStatus(state, teamEntry) {
   const now = Date.now()
   const ageSec = (now - (latest.timestamp || now)) / 1000
   for (const cp of state.checkpoints) {
-    if (cp.team.toLowerCase() !== teamEntry.team.toLowerCase()) continue
+    if ((cp.team || '').toLowerCase() !== teamEntry.team.toLowerCase()) continue
     const distM = haversine(latest, cp) * 1000
     const triggerRadius = state.walkingMode ? WALKING_RADIUS_M : (cp.radius || 500)
     if (distM <= triggerRadius) return 'Vid Checkpoint'
@@ -190,6 +223,7 @@ app.post('/api/admin/patch', requireAdmin, (req, res) => {
 })
 
 app.post('/api/admin/reset', requireAdmin, (_req, res) => {
+  clearPhotos.run()
   commit(defaultState())
   res.json({ ok: true })
 })
@@ -280,8 +314,11 @@ app.post('/api/team-progress', (req, res) => {
   const indexRaw = Number(req.body?.index)
   if (!Number.isFinite(indexRaw)) return res.status(400).json({ error: 'index required' })
   if (state.teamProgress[key] === undefined) return res.status(404).json({ error: 'no such slot' })
-  const maxIndex = Math.max(0, state.checkpoints.filter(cp => cp.team.toLowerCase() === key).length - 1)
-  const index = Math.max(0, Math.min(indexRaw, maxIndex))
+  // index may equal the checkpoint count: that's the "route finished" state
+  // (every checkpoint cleared) — clamping to count-1 made the final
+  // checkpoint's completion points unreachable.
+  const cpCount = state.checkpoints.filter(cp => (cp.team || '').toLowerCase() === key).length
+  const index = Math.max(0, Math.min(indexRaw, cpCount))
   const next = { ...state, teamProgress: { ...state.teamProgress, [key]: index } }
   commit(next)
   res.json({ ok: true })
@@ -304,9 +341,10 @@ app.post('/api/team-position', (req, res) => {
   if (clearHistory || state.isSimulationMode || (lastPoint && haversine(lastPoint, nextPoint) > 50 && target.path.length < 5)) {
     nextPath = clearHistory ? [nextPoint] : [...(target.path || []), nextPoint]
   } else if (lastPoint) {
-    if (Math.abs(lastPoint.lat - nextPoint.lat) < 1e-6 && Math.abs(lastPoint.lng - nextPoint.lng) < 1e-6) {
-      // No movement — refresh status only.
-      nextPath = target.path
+    if (haversine(lastPoint, nextPoint) * 1000 < 10) {
+      // Sub-10 m move is GPS jitter (a parked phone drifts a few metres per
+      // fix) — refresh status/last-seen only, don't grow the path.
+      nextPath = [...target.path.slice(0, -1), { ...lastPoint, timestamp: nextPoint.timestamp }]
     } else {
       const distKm = haversine(lastPoint, nextPoint)
       const dtH = (nextPoint.timestamp - (lastPoint.timestamp || 0)) / 3_600_000
@@ -319,6 +357,12 @@ app.post('/api/team-position', (req, res) => {
   } else {
     nextPath = [nextPoint]
   }
+
+  // Cap path length so a full day of driving can't grow the broadcast state
+  // without bound. Oldest points fall off; live view and recent trail keep
+  // working, only the very start of a very long trace is trimmed.
+  const MAX_PATH_POINTS = 4000
+  if (nextPath.length > MAX_PATH_POINTS) nextPath = nextPath.slice(-MAX_PATH_POINTS)
 
   const updated = { ...target, path: nextPath }
   updated.status = calcStatus(state, updated)
@@ -372,7 +416,8 @@ app.post('/api/arrival', (req, res) => {
 })
 
 // Attach a photo (data URL) to the most recent arrival entry for the team at
-// the given checkpoint. Teams upload one photo per task completion.
+// the given checkpoint. Teams upload one photo per task completion. The bytes
+// go into the photos table; only the photoId enters the broadcast state.
 app.post('/api/arrival-photo', (req, res) => {
   const key = (req.body?.team || '').toString().toLowerCase()
   const checkpointId = req.body?.checkpointId
@@ -384,11 +429,27 @@ app.post('/api/arrival-photo', (req, res) => {
   const idx = state.arrivalLog.findIndex(e => e.team === key && e.checkpointId === checkpointId)
   if (idx === -1) return res.status(404).json({ error: 'arrival entry not found' })
 
-  const updated = { ...state.arrivalLog[idx], photo, photoAt: Date.now() }
+  const entry = state.arrivalLog[idx]
+  const photoId = entry.id || `${key}-${checkpointId}-${entry.timestamp}`
+  insertPhoto.run(photoId, photo, Date.now())
+
+  const { photo: _legacy, ...rest } = entry
   const nextLog = state.arrivalLog.slice()
-  nextLog[idx] = updated
+  nextLog[idx] = { ...rest, photoId, photoAt: Date.now() }
   commit({ ...state, arrivalLog: nextLog })
-  res.json({ ok: true })
+  res.json({ ok: true, photoId })
+})
+
+// Serve photo bytes. Content is immutable per id (re-uploads overwrite the
+// row but keep the same id, so cap client caching at a modest lifetime).
+app.get('/api/photo/:id', (req, res) => {
+  const row = selectPhoto.get(req.params.id)
+  if (!row) return res.status(404).json({ error: 'photo not found' })
+  const m = row.data.match(/^data:(image\/[\w.+-]+);base64,(.*)$/s)
+  if (!m) return res.status(500).json({ error: 'stored photo is not a valid data URL' })
+  res.set('Content-Type', m[1])
+  res.set('Cache-Control', 'public, max-age=300')
+  res.send(Buffer.from(m[2], 'base64'))
 })
 
 app.post('/api/chat', (req, res) => {
@@ -397,10 +458,13 @@ app.post('/api/chat', (req, res) => {
 
   // Admin-role messages require admin token. Without it, downgrade to team.
   let role = req.body?.role === 'admin' && isAdmin(req) ? 'admin' : 'team'
-  const sender = (req.body?.sender || role || 'system').toString().toLowerCase()
+  // Team senders must be a real slot key — otherwise a client could pass
+  // sender:"admin" (or any label) and have it render as an official name.
+  const senderRaw = (req.body?.sender || '').toString().toLowerCase()
+  const sender = role === 'admin' ? 'admin' : (state.teams[senderRaw] ? senderRaw : 'team')
   const senderName = role === 'admin'
     ? 'Spelledning'
-    : (state.teams[sender]?.name || sender.toUpperCase())
+    : (state.teams[sender]?.name || 'OKÄNT LAG')
 
   const msg = {
     id: `${sender}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
@@ -420,7 +484,8 @@ app.post('/api/chat', (req, res) => {
 const server = http.createServer(app)
 
 server.on('upgrade', (req, socket, head) => {
-  if (req.url !== '/api/sync') {
+  const pathname = (req.url || '').split('?')[0]
+  if (pathname !== '/api/sync') {
     socket.destroy()
     return
   }

@@ -76,8 +76,8 @@
               </span>
               <span v-if="cp.delayLabel" class="cp-delay" :class="cp.delayClass">{{ cp.delayLabel }}</span>
             </div>
-            <a v-if="cp.arrival?.photo" :href="cp.arrival.photo" target="_blank" class="cp-photo-link">
-              <img :src="cp.arrival.photo" alt="lag-bild" class="cp-photo" />
+            <a v-if="photoUrl(cp.arrival)" :href="photoUrl(cp.arrival)" target="_blank" class="cp-photo-link">
+              <img :src="photoUrl(cp.arrival)" alt="lag-bild" class="cp-photo" loading="lazy" />
             </a>
             <div v-else-if="cp.arrival" class="cp-no-photo">Ingen bild uppladdad</div>
           </div>
@@ -159,13 +159,25 @@ function cpTypeLabel(cp) {
   return 'UPPDRAG'
 }
 
+// Photos are stored server-side and referenced by id; tolerate the legacy
+// inline data-URL shape from pre-migration cached snapshots.
+function hasPhoto(a) {
+  return !!(a && (a.photoId || a.photo))
+}
+
+function photoUrl(arrival) {
+  if (!arrival) return ''
+  if (arrival.photoId) return `/api/photo/${encodeURIComponent(arrival.photoId)}`
+  return arrival.photo || ''
+}
+
 const teamRows = computed(() => {
   return leaderboard.value.map((row) => {
     const teamKey = row.team
     const teamCheckpoints = checkpoints.value.filter((cp) => (cp.team || '').toLowerCase() === teamKey.toLowerCase())
     const arrivalsForTeam = arrivalLog.value.filter((e) => e.team === teamKey)
     const arrivalByCp = new Map(arrivalsForTeam.map((a) => [a.checkpointId, a]))
-    const photoCount = arrivalsForTeam.filter((a) => !!a.photo).length
+    const photoCount = arrivalsForTeam.filter(hasPhoto).length
 
     const cps = teamCheckpoints.map((cp, index) => {
       const arrival = arrivalByCp.get(cp.id) || null
@@ -224,7 +236,7 @@ const teamRows = computed(() => {
 })
 
 const totalArrivals = computed(() => arrivalLog.value.length)
-const totalPhotos = computed(() => arrivalLog.value.filter((a) => !!a.photo).length)
+const totalPhotos = computed(() => arrivalLog.value.filter(hasPhoto).length)
 </script>
 
 <style scoped>

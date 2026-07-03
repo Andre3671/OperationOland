@@ -204,7 +204,6 @@ export function useAdminTracking() {
   const genProgress = ref('')
   const error = ref(null)
   const avoidHighways = ref(true)
-  const geocodeSource = ref('nominatim')
   
   const debugPositions = ref(SLOT_KEYS.reduce((acc, team, index) => {
     acc[team] = { lat: 56.78 + index * 0.01, lng: 16.56 - index * 0.01 }
@@ -292,9 +291,15 @@ export function useAdminTracking() {
     return `${minLng},${maxLat},${maxLng},${minLat}` // left,top,right,bottom
   }
 
+  // Reverse-geocode via Nominatim; a network/parse failure falls back to
+  // Photon FOR THIS CALL ONLY. The fallback used to latch a module-wide
+  // source flag, so one transient Nominatim hiccup permanently downgraded
+  // every later lookup (and a Photon hiccup latched into a source with no
+  // implementation, making all further lookups return null and killing
+  // route generation).
   async function fetchReverse(lat, lng, requireSettlement = true) {
-    if (geocodeSource.value === 'nominatim') {
-      try {
+    let nominatimFailed = false
+    try {
         const url = `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json&addressdetails=1&zoom=14`
         const data = await fetchWithRetry(url, { headers: { 'Accept-Language': 'sv', 'User-Agent': 'OperationOland-Bot' } })
         if (data && data.address) {
@@ -331,12 +336,14 @@ export function useAdminTracking() {
             }
           }
         }
-      } catch (e) {
-        console.warn('Nominatim failed, switching to Photon...')
-        geocodeSource.value = 'photon'
-      }
+    } catch (e) {
+      console.warn('Nominatim failed, trying Photon for this lookup...', e)
+      nominatimFailed = true
     }
-    if (geocodeSource.value === 'photon') {
+    // Photon only covers Nominatim OUTAGES. When Nominatim answered but the
+    // spot was unsuitable (sea, motorway, no settlement), return null so the
+    // caller re-jitters and samples a new point instead.
+    if (nominatimFailed) {
       try {
         const url = `https://photon.komoot.io/reverse?lon=${lng}&lat=${lat}`
         const res = await fetch(url)
@@ -348,9 +355,11 @@ export function useAdminTracking() {
             return { lat: data.features[0].geometry.coordinates[1], lng: data.features[0].geometry.coordinates[0], name: fProps.name || fProps.city || 'Sektor', region, road: fProps.street || '' }
           }
         }
-      } catch (e) { geocodeSource.value = 'overpass' }
+      } catch (e) {
+        console.warn('Photon reverse geocode failed too:', e)
+      }
     }
-    return null 
+    return null
   }
 
   function getElementPoint(element) {
@@ -645,6 +654,11 @@ export function useAdminTracking() {
 
       const maxAttempts = maxMeters ? 3 : 1
       const generatedTeams = []
+      // Buffer routes locally and assign the ref once after the loop —
+      // generation takes minutes, and server snapshots arriving in between
+      // overwrite the shared refs (a stale echo could clobber a half-built
+      // map of per-team paths).
+      const nextIdealPaths = {}
 
       for (let teamIndex = 0; teamIndex < teamsList.length; teamIndex++) {
         const team = teamsList[teamIndex]
@@ -786,7 +800,7 @@ export function useAdminTracking() {
         // are silently dropped by the JSON round-trip the store uses to sync
         // state to the server. Promote them to real object fields so the
         // Results view's estimated distance / deviation survive the sync.
-        idealRoadPaths.value[team] = {
+        nextIdealPaths[team] = {
           path: teamRoute,
           distanceMeters: Number.isFinite(teamRoute?.distanceMeters) ? teamRoute.distanceMeters : null,
           durationSeconds: Number.isFinite(teamRoute?.durationSeconds) ? teamRoute.durationSeconds : null,
@@ -802,15 +816,20 @@ export function useAdminTracking() {
 
       synchronizeSharedArrivalTimes(generatedTeams)
       applyArrivalTimes(generatedTeams, operationStartTime.value, meetingPointTime.value)
+      const nextCheckpoints = []
       for (const generated of generatedTeams) {
         applySegmentMinutes(generated.startCheckpoint, generated.checkpoints, generated.segmentMinutes)
-        checkpoints.value.push(generated.startCheckpoint)
-        checkpoints.value.push(...generated.checkpoints)
-        checkpoints.value.push(generated.finishCheckpoint)
+        nextCheckpoints.push(generated.startCheckpoint)
+        nextCheckpoints.push(...generated.checkpoints)
+        nextCheckpoints.push(generated.finishCheckpoint)
       }
+      // Single atomic assignment per ref → one admin patch each, no
+      // interleaving with snapshots that arrived during generation.
+      checkpoints.value = nextCheckpoints
+      idealRoadPaths.value = { ...idealRoadPaths.value, ...nextIdealPaths }
 
       const distances = teamsList
-        .map(t => idealRoadPaths.value[t] && idealRoadPaths.value[t].distanceMeters)
+        .map(t => nextIdealPaths[t] && nextIdealPaths[t].distanceMeters)
         .filter(d => Number.isFinite(d) && d > 0)
       if (distances.length === teamsList.length) {
         const min = Math.min(...distances)
@@ -849,7 +868,9 @@ export function useAdminTracking() {
   }
   function toggleOperation() { setOperationActive(!isOperationActive.value) }
   function toggleWalkingMode() { walkingMode.value = !walkingMode.value }
-  function updateTeamPosition(team, lat, lng) {
+  // Debug tool: pushes the coordinates typed into the sim-GPS panel
+  // (debugPositions) as the team's position.
+  function updateTeamPosition(team) {
     const position = debugPositions.value[team]
     if (!position) return
     storeUpdate(team, position.lat, position.lng)

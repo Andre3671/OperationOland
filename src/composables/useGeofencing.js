@@ -7,9 +7,10 @@ export function useGeofencing(checkpoints, activeIndex, teamNameSource) {
   const distanceToTarget = ref(null)
   // null = fine / not yet known, otherwise a short code the UI can show.
   const gpsError = ref(null)
-  const { isSimulationMode, walkingMode, history, updateTeamPosition, recordCheckpointArrival } = useSimulationStore()
+  const { isSimulationMode, isOperationActive, walkingMode, history, updateTeamPosition, recordCheckpointArrival } = useSimulationStore()
   let watchId = null
   let triggeredCheckpointKey = null
+  let lastSentPosition = null // { lat, lng, at } of the last position POSTed
 
   function haversineDistance(lat1, lon1, lat2, lon2) {
     const R = 6371000 // Radius of Earth in meters
@@ -55,12 +56,37 @@ export function useGeofencing(checkpoints, activeIndex, teamNameSource) {
     // updated above so the HUD keeps counting down.
     const fixTooImprecise = Number.isFinite(accuracy) && accuracy > triggerRadius * 1.5
 
-    if (dist <= triggerRadius && triggeredCheckpointKey !== checkpointKey && !fixTooImprecise) {
+    // Arrivals only count while the operation is live — otherwise teams
+    // gathered at the start city during setup pop overlays and pollute the
+    // arrival log before the admin has opened the game.
+    if (dist <= triggerRadius && triggeredCheckpointKey !== checkpointKey && !fixTooImprecise && isOperationActive.value) {
       console.log('Geofencing: TARGET REACHED!')
       triggeredCheckpointKey = checkpointKey
       recordCheckpointArrival(toValue(teamNameSource), currentCp, dist)
       isOverlayActive.value = true
     }
+  }
+
+  // Rate-limit the position POSTs. Every post makes the server persist and
+  // broadcast the full state to every client, so per-fix posting (≈1/s while
+  // moving) floods the sync loop and grows the path with GPS jitter. Local
+  // proximity checks still run on every fix — only the network send is
+  // throttled. A 60 s heartbeat keeps the server's last-seen fresh while
+  // parked so the admin view doesn't flip to "Signal förlorad".
+  const POSITION_MIN_INTERVAL_MS = 5_000
+  const POSITION_HEARTBEAT_MS = 60_000
+
+  function maybeSendPosition(team, lat, lng) {
+    const now = Date.now()
+    if (lastSentPosition) {
+      const sinceMs = now - lastSentPosition.at
+      if (sinceMs < POSITION_MIN_INTERVAL_MS) return
+      const movedM = haversineDistance(lastSentPosition.lat, lastSentPosition.lng, lat, lng)
+      const minMoveM = walkingMode.value ? 10 : 25
+      if (movedM < minMoveM && sinceMs < POSITION_HEARTBEAT_MS) return
+    }
+    lastSentPosition = { lat, lng, at: now }
+    updateTeamPosition(team, lat, lng)
   }
 
   function startTracking() {
@@ -81,7 +107,7 @@ export function useGeofencing(checkpoints, activeIndex, teamNameSource) {
         const { latitude, longitude, accuracy } = position.coords
 
         // Broadcast real location to the store so admin sees live tracking.
-        updateTeamPosition(team, latitude, longitude)
+        maybeSendPosition(team, latitude, longitude)
 
         // Only use real GPS for local logic if NOT in simulation mode
         if (!isSimulationMode.value) {

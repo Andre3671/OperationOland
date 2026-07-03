@@ -166,8 +166,8 @@
               {{ entry.checkpointType.toUpperCase() }}
               <span v-if="entry.distanceMeters != null"> · {{ entry.distanceMeters }} m från centrum</span>
             </div>
-            <a v-if="entry.photo" :href="entry.photo" target="_blank" class="arrival-photo-link">
-              <img :src="entry.photo" class="arrival-photo" alt="lag-bild" />
+            <a v-if="photoUrl(entry)" :href="photoUrl(entry)" target="_blank" class="arrival-photo-link">
+              <img :src="photoUrl(entry)" class="arrival-photo" alt="lag-bild" loading="lazy" />
             </a>
           </div>
         </div>
@@ -425,7 +425,7 @@
 import { ref, computed, onMounted, watch } from 'vue'
 import AdminMap from '../components/AdminMap.vue'
 import { useAdminTracking } from '../composables/useAdminTracking'
-import { SLOT_DEFS, MAX_TEAMS } from '../lib/teamSlots'
+import { SLOT_DEFS, SLOT_KEYS, MAX_TEAMS } from '../lib/teamSlots'
 import { computeLeaderboard, SCORING } from '../lib/scoring'
 
 const {
@@ -579,7 +579,9 @@ watch(genSharedTaskCount, (n) => {
 })
 
 const checkpointsByTeam = computed(() => {
-  const groups = { alpha: [], bravo: [], charlie: [] }
+  // Seed every slot so groups always render in slot order regardless of
+  // checkpoint insertion order.
+  const groups = SLOT_KEYS.reduce((acc, key) => { acc[key] = []; return acc }, {})
   for (const cp of checkpoints.value) {
     if (groups[cp.team]) groups[cp.team].push(cp)
     else (groups[cp.team] = []).push(cp)
@@ -837,6 +839,14 @@ const handleGenerateRoutes = () => {
 const formatTime = (timestamp) => {
   if (!timestamp) return '--:--'
   return new Date(timestamp).toLocaleTimeString('sv-SE', { hour: '2-digit', minute: '2-digit' })
+}
+
+// Photos are stored server-side and referenced by id; tolerate the legacy
+// inline data-URL shape from pre-migration cached snapshots.
+const photoUrl = (entry) => {
+  if (!entry) return ''
+  if (entry.photoId) return `/api/photo/${encodeURIComponent(entry.photoId)}`
+  return entry.photo || ''
 }
 
 const formatClock = (iso) => {

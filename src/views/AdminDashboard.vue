@@ -18,6 +18,17 @@
     <header class="admin-header">
       <div class="admin-header-left">
         <div class="admin-title">ADMIN // OPERATION ÖLAND</div>
+        <select
+          v-if="operationsList.length"
+          class="op-select"
+          :value="activeOperationId || ''"
+          @change="onOperationSelect"
+          title="Aktiv operation — byte slår igenom direkt på alla anslutna enheter"
+        >
+          <option v-for="op in operationsList" :key="op.id" :value="op.id">{{ op.name }}</option>
+          <option value="__new__">+ Ny operation…</option>
+        </select>
+        <button class="header-btn" @click="saveOperationAs" title="Spara nuvarande läge/resultat som en egen operation i listan">SPARA SOM</button>
         <div class="admin-op-pill" :class="{ 'is-active': isOperationActive }" @click="toggleOperation">
           <span class="admin-op-dot"></span>
           {{ isOperationActive ? 'SYSTEM ÖPPET' : 'LÅST FÖR TEAM' }}
@@ -168,6 +179,36 @@
             <a v-if="photoUrl(entry)" :href="photoUrl(entry)" target="_blank" class="arrival-photo-link">
               <img :src="photoUrl(entry)" class="arrival-photo" alt="lag-bild" loading="lazy" />
             </a>
+          </div>
+        </div>
+      </div>
+
+      <!-- Operations catalog -->
+      <div class="meeting-section">
+        <div class="section-title">OPERATIONER</div>
+        <div class="op-list">
+          <div v-for="op in operationsList" :key="op.id" class="op-row" :class="{ 'is-live': op.id === activeOperationId }">
+            <span class="op-name">{{ op.name }}</span>
+            <span v-if="op.id === activeOperationId" class="op-live-tag">LIVE</span>
+            <div class="op-row-actions">
+              <button v-if="op.id !== activeOperationId" class="header-btn" @click="switchOperation(op.id)" title="Gör denna operation live">AKTIVERA</button>
+              <button class="header-btn" @click="renameOperationPrompt(op)" title="Byt namn">✎</button>
+              <button v-if="op.id !== activeOperationId" class="header-btn danger" @click="deleteOperationConfirm(op)" title="Ta bort permanent">✕</button>
+            </div>
+          </div>
+        </div>
+        <button class="add-btn" style="margin-top: 10px; width: 100%;" @click="openCreateOperation">+ Ny operation</button>
+      </div>
+
+      <!-- Team rosters (who rides in which car) -->
+      <div class="meeting-section" v-if="rosterTeams.length">
+        <div class="section-title">LAGINDELNING</div>
+        <div v-for="key in rosterTeams" :key="key" class="roster-team">
+          <div class="roster-team-name" :style="{ color: TEAM_COLORS[key] }">{{ teams[key]?.name || key.toUpperCase() }}</div>
+          <div class="roster-members">
+            <span v-for="(person, i) in teamRosters[key]" :key="i" class="roster-member" :class="{ 'is-driver': person.driver }">
+              {{ person.name }}<span v-if="person.driver" title="Har körkort — förare"> 🚗</span>
+            </span>
           </div>
         </div>
       </div>
@@ -417,6 +458,60 @@
         </div>
       </div>
     </aside>
+
+    <!-- Create-operation modal -->
+    <div v-if="createOpOpen" class="op-modal-backdrop" @click.self="createOpOpen = false">
+      <div class="op-modal">
+        <div class="section-title">NY OPERATION</div>
+
+        <label class="gen-label">Namn på operationen
+          <input v-model="createOpName" class="checkpoint-input" placeholder="t.ex. Operation Skåne 2026" maxlength="80" />
+        </label>
+
+        <div class="op-mode-row">
+          <label><input type="radio" value="custom" v-model="createOpMode" /> Egna lag</label>
+          <label><input type="radio" value="random" v-model="createOpMode" /> Random lag</label>
+        </div>
+
+        <label class="gen-label">{{ createOpMode === 'random' ? 'Antal bilar (lag)' : 'Antal lag' }}
+          <input v-model.number="createOpTeamCount" class="checkpoint-input" type="number" :min="1" :max="MAX_TEAMS" />
+        </label>
+
+        <template v-if="createOpMode === 'custom'">
+          <div class="slot-name-list">
+            <div class="slot-name-row" v-for="(spec, i) in createOpTeamSpecs" :key="i">
+              <span class="slot-swatch" :style="{ background: slotColors[i] }"></span>
+              <span class="slot-index">#{{ i + 1 }}</span>
+              <input v-model="spec.name" class="checkpoint-input slot-name-input" :placeholder="`TEAM ${i + 1}`" />
+            </div>
+          </div>
+        </template>
+
+        <template v-else>
+          <div class="op-people-list">
+            <div class="op-person-row" v-for="(person, i) in createOpPeople" :key="i">
+              <input v-model="person.name" class="checkpoint-input" :placeholder="`Deltagare ${i + 1}`" maxlength="40" />
+              <label class="op-driver-check" title="Har körkort">
+                <input type="checkbox" v-model="person.driver" /> 🚗
+              </label>
+              <button class="kick-btn" @click="createOpPeople.splice(i, 1)" title="Ta bort deltagare">✕</button>
+            </div>
+          </div>
+          <button class="header-btn" @click="createOpPeople.push({ name: '', driver: false })">+ Lägg till deltagare</button>
+          <div class="gen-hint" style="margin-top: 8px;">
+            Bocka i 🚗 för alla med körkort. Varje bil får minst en förare, resten fördelas jämnt och slumpmässigt.
+          </div>
+        </template>
+
+        <div v-if="createOpError" class="op-modal-error">{{ createOpError }}</div>
+        <div class="op-modal-actions">
+          <button class="header-btn" @click="createOpOpen = false">Avbryt</button>
+          <button class="add-btn" :disabled="createOpBusy" @click="submitCreateOperation">
+            {{ createOpBusy ? 'Skapar…' : 'Skapa & aktivera' }}
+          </button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -467,6 +562,14 @@ const {
   arrivalLog,
   chatMessages,
   sendChatMessage,
+  configureSlots,
+  teamRosters,
+  operationsList,
+  activeOperationId,
+  createOperation,
+  activateOperation,
+  renameOperation,
+  deleteOperation,
 } = useAdminTracking()
 
 const leaderboard = computed(() => computeLeaderboard({
@@ -550,6 +653,148 @@ async function handleFinishSearch() {
 
 const slotColors = SLOT_DEFS.map(s => s.color)
 const TEAM_COLORS = SLOT_DEFS.reduce((acc, s) => { acc[s.key] = s.color; return acc }, {})
+
+// ---- operations catalog UI ----
+
+const createOpOpen = ref(false)
+const createOpName = ref('')
+const createOpMode = ref('custom') // 'custom' = egna lag, 'random' = slumpad indelning
+const createOpTeamCount = ref(3)
+const createOpTeamSpecs = ref(Array.from({ length: 3 }, (_, i) => ({ name: `TEAM ${i + 1}` })))
+const createOpPeople = ref(Array.from({ length: 4 }, () => ({ name: '', driver: false })))
+const createOpError = ref('')
+const createOpBusy = ref(false)
+
+watch(createOpTeamCount, (n) => {
+  const count = Math.max(1, Math.min(MAX_TEAMS, parseInt(n) || 1))
+  const specs = createOpTeamSpecs.value.slice(0, count)
+  while (specs.length < count) specs.push({ name: `TEAM ${specs.length + 1}` })
+  createOpTeamSpecs.value = specs
+})
+
+const rosterTeams = computed(() =>
+  SLOT_KEYS.filter(key => teams.value[key]?.enabled && (teamRosters.value[key] || []).length > 0)
+)
+
+function openCreateOperation() {
+  createOpName.value = ''
+  createOpError.value = ''
+  createOpOpen.value = true
+}
+
+function shuffled(list) {
+  const copy = list.slice()
+  for (let i = copy.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1))
+    ;[copy[i], copy[j]] = [copy[j], copy[i]]
+  }
+  return copy
+}
+
+// One driver per car first, then everyone else round-robin over the cars —
+// sizes never differ by more than one person.
+function distributePeople(people, teamCount) {
+  const drivers = shuffled(people.filter(p => p.driver))
+  const passengers = shuffled(people.filter(p => !p.driver))
+  const cars = Array.from({ length: teamCount }, () => [])
+  for (let i = 0; i < teamCount; i++) cars[i].push(drivers[i])
+  const rest = shuffled([...drivers.slice(teamCount), ...passengers])
+  rest.forEach((person, i) => cars[i % teamCount].push(person))
+  return cars
+}
+
+async function submitCreateOperation() {
+  const name = createOpName.value.trim()
+  createOpError.value = ''
+  if (!name) { createOpError.value = 'Ange ett namn på operationen.'; return }
+  const teamCount = Math.max(1, Math.min(MAX_TEAMS, parseInt(createOpTeamCount.value) || 1))
+
+  let slotSpecs
+  let rosters = null
+  if (createOpMode.value === 'random') {
+    const people = createOpPeople.value
+      .map(p => ({ name: (p.name || '').trim(), driver: !!p.driver }))
+      .filter(p => p.name)
+    if (people.length === 0) { createOpError.value = 'Lägg till minst en deltagare.'; return }
+    const driverCount = people.filter(p => p.driver).length
+    if (driverCount < teamCount) {
+      createOpError.value = `${teamCount} bilar kräver minst ${teamCount} deltagare med körkort (nu: ${driverCount}).`
+      return
+    }
+    const cars = distributePeople(people, teamCount)
+    slotSpecs = cars.map((_, i) => ({ name: `TEAM ${i + 1}` }))
+    rosters = SLOT_KEYS.reduce((acc, key, i) => { acc[key] = cars[i] || []; return acc }, {})
+  } else {
+    slotSpecs = createOpTeamSpecs.value
+      .slice(0, teamCount)
+      .map((spec, i) => ({ name: (spec.name || '').trim() || `TEAM ${i + 1}` }))
+  }
+
+  createOpBusy.value = true
+  try {
+    // Server activates the new (blank) operation before responding, so the
+    // configureSlots patch that follows lands in the new operation.
+    await createOperation(name, { activate: true })
+    configureSlots(slotSpecs, rosters)
+    // Mirror into the route generator so "Generera Rutter" keeps these teams.
+    genTeamCount.value = slotSpecs.length
+    genSlotSpecs.value = slotSpecs.map(spec => ({ name: spec.name }))
+    createOpOpen.value = false
+  } catch (e) {
+    createOpError.value = 'Kunde inte skapa operationen: ' + e.message
+  } finally {
+    createOpBusy.value = false
+  }
+}
+
+async function switchOperation(id) {
+  const op = operationsList.value.find(o => o.id === id)
+  if (!op || id === activeOperationId.value) return
+  const ok = confirm(`Byt live-operation till "${op.name}"?\n\nAlla anslutna enheter (även lagen) växlar direkt. Nuvarande operation sparas och finns kvar i listan.`)
+  if (!ok) return
+  try {
+    await activateOperation(id)
+  } catch (e) {
+    alert('Kunde inte byta operation: ' + e.message)
+  }
+}
+
+function onOperationSelect(event) {
+  const id = event.target.value
+  // Snap the select back — the WS broadcast moves it if the switch succeeds.
+  event.target.value = activeOperationId.value || ''
+  if (id === '__new__') { openCreateOperation(); return }
+  if (id) switchOperation(id)
+}
+
+async function saveOperationAs() {
+  const name = prompt('Spara nuvarande operation/resultat som:')
+  if (!name || !name.trim()) return
+  try {
+    await createOperation(name.trim(), { copyActive: true })
+  } catch (e) {
+    alert('Kunde inte spara operationen: ' + e.message)
+  }
+}
+
+async function renameOperationPrompt(op) {
+  const name = prompt('Nytt namn:', op.name)
+  if (!name || !name.trim() || name.trim() === op.name) return
+  try {
+    await renameOperation(op.id, name.trim())
+  } catch (e) {
+    alert('Kunde inte byta namn: ' + e.message)
+  }
+}
+
+async function deleteOperationConfirm(op) {
+  if (!confirm(`Ta bort operationen "${op.name}" permanent?\n\nRutter, resultat och foton för den operationen försvinner. Detta går inte att ångra.`)) return
+  try {
+    await deleteOperation(op.id)
+  } catch (e) {
+    alert('Kunde inte ta bort: ' + e.message)
+  }
+}
 
 watch(genTeamCount, (n) => {
   const next = Math.max(1, Math.min(Number(n) || 1, MAX_TEAMS))
@@ -1039,6 +1284,185 @@ const toggleSharedSimulation = () => {
 .header-btn.sidebar-toggle {
   margin-left: 4px;
   padding: 6px 10px;
+}
+
+/* ---- operations catalog ---- */
+
+.op-select {
+  background: rgba(255, 255, 255, 0.04);
+  color: #ffcc00;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  padding: 6px 10px;
+  font-weight: 700;
+  font-size: 0.75rem;
+  letter-spacing: 0.08em;
+  border-radius: 4px;
+  font-family: inherit;
+  max-width: 220px;
+  cursor: pointer;
+}
+
+.op-select:hover {
+  border-color: rgba(255, 204, 0, 0.5);
+}
+
+.op-select option {
+  background: #111;
+  color: #eee;
+}
+
+.op-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.op-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid #222;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.op-row.is-live {
+  border-color: rgba(0, 255, 102, 0.4);
+}
+
+.op-name {
+  flex: 1;
+  font-size: 0.8rem;
+  color: #ddd;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.op-live-tag {
+  color: #00ff99;
+  font-size: 0.65rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+}
+
+.op-row-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.roster-team {
+  margin-bottom: 12px;
+}
+
+.roster-team-name {
+  font-weight: 700;
+  font-size: 0.78rem;
+  margin-bottom: 5px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.roster-members {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.roster-member {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid #2a2a2a;
+  padding: 3px 9px;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  color: #ccc;
+}
+
+.roster-member.is-driver {
+  border-color: rgba(0, 255, 136, 0.35);
+}
+
+.op-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 3000;
+  background: rgba(0, 0, 0, 0.7);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+
+.op-modal {
+  width: 440px;
+  max-width: 100%;
+  max-height: 90vh;
+  overflow-y: auto;
+  background: rgba(10, 10, 10, 0.97);
+  border: 1px solid #333;
+  border-radius: 8px;
+  padding: 20px;
+}
+
+.op-mode-row {
+  display: flex;
+  gap: 18px;
+  margin: 14px 0;
+  font-size: 0.8rem;
+  color: #ccc;
+}
+
+.op-mode-row label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+}
+
+.op-mode-row input {
+  accent-color: #ffcc00;
+}
+
+.op-people-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 10px 0;
+}
+
+.op-person-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.op-driver-check {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.8rem;
+  color: #ccc;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.op-driver-check input {
+  accent-color: #00ff88;
+}
+
+.op-modal-error {
+  color: #ff6e6e;
+  font-size: 0.78rem;
+  margin-top: 10px;
+}
+
+.op-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 16px;
 }
 
 .admin-sidebar {

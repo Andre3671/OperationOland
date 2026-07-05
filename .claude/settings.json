@@ -16,7 +16,14 @@
       "Bash(curl -sS --max-time 20 \"https://routing.openstreetmap.de/routed-foot/route/v1/foot/16.3562,56.6635;16.36,56.67;16.37,56.68?overview=full&geometries=geojson&steps=false\")",
       "Bash(node -e \"let d='';process.stdin.on\\('data',c=>d+=c\\).on\\('end',\\(\\)=>{const j=JSON.parse\\(d\\);const r=j.routes&&j.routes[0];console.log\\('foot code:',j.code,'legs:',r&&r.legs.length,'durations:',r&&r.legs.map\\(l=>Math.round\\(l.duration\\)\\)\\)}\\)\")",
       "PowerShell(node --check server/src/index.js)",
-      "PowerShell(if \\($?\\) { \"server OK\" })"
+      "PowerShell(if \\($?\\) { \"server OK\" })",
+      "Bash(npx vite *)",
+      "Bash(docker version *)",
+      "Bash(docker build *)",
+      "Bash(curl -s \"http://localhost:5199/src/views/AdminDashboard.vue\")",
+      "Bash(curl -s \"http://localhost:5199/src/store/simulationStore.js\")",
+      "Bash(docker stop *)",
+      "Bash(taskkill //F //IM node.exe)"
     ]
   }
 }

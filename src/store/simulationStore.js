@@ -62,6 +62,12 @@ const walkingMode = ref(cached.walkingMode ?? false)
 const operationStartTime = ref(cached.operationStartTime ?? null)
 const meetingPointTime = ref(cached.meetingPointTime ?? null)
 const teamStartTimes = ref(cached.teamStartTimes || makeEmptyMap(null))
+const teamRosters = ref(cached.teamRosters || makeEmptyMap([]))
+
+// Operations catalog — which saved operations exist and which one is live.
+// Server-owned; arrives alongside every state snapshot.
+const operationsList = ref([])
+const activeOperationId = ref(null)
 
 export const WALKING_RADIUS_M = 50
 const connectionStatus = ref('connecting')
@@ -90,6 +96,7 @@ function applyState(serverState) {
     operationStartTime.value = serverState.operationStartTime ?? null
     meetingPointTime.value = serverState.meetingPointTime ?? null
     teamStartTimes.value = serverState.teamStartTimes || makeEmptyMap(null)
+    teamRosters.value = serverState.teamRosters || makeEmptyMap([])
   } finally {
     queueMicrotask(() => { applyingRemote = false })
   }
@@ -98,12 +105,18 @@ function applyState(serverState) {
   } catch (_) { /* quota or storage disabled — ignore */ }
 }
 
+function applyOps(ops) {
+  if (!ops) return // server without multi-op support (old build) — leave empty
+  operationsList.value = Array.isArray(ops.operations) ? ops.operations : []
+  activeOperationId.value = ops.activeId ?? null
+}
+
 // Bootstrap: pull initial state, then open the WS for live updates.
 fetchInitialState()
-  .then(({ state }) => applyState(state))
+  .then(({ state, ops }) => { applyState(state); applyOps(ops) })
   .catch((e) => console.warn('[sync] initial state fetch failed:', e))
 
-connectSync(applyState, {
+connectSync((state, ops) => { applyState(state); applyOps(ops) }, {
   onStatus: (s) => {
     connectionStatus.value = s
     if (s === 'connected') {
@@ -176,8 +189,12 @@ function makeAdminPatcher(fieldName, sourceRef, options = {}) {
   watch(sourceRef, (value) => {
     if (applyingRemote) return
     if (!getAdminToken()) return // navigators silently no-op
+    const opAtSchedule = activeOperationId.value
     clearTimeout(timer)
     timer = setTimeout(() => {
+      // A write debounced against one operation must not land in another if
+      // the admin switched live operation inside the debounce window.
+      if (activeOperationId.value !== opAtSchedule) return
       api.adminPatch({ [fieldName]: JSON.parse(JSON.stringify(value)) }).catch((e) => {
         console.warn(`[sync] admin patch ${fieldName} failed:`, e)
       })
@@ -195,6 +212,7 @@ makeAdminPatcher('isOperationActive', isOperationActive, { debounce: 50 })
 makeAdminPatcher('walkingMode', walkingMode, { debounce: 50 })
 makeAdminPatcher('operationStartTime', operationStartTime, { debounce: 300 })
 makeAdminPatcher('meetingPointTime', meetingPointTime, { debounce: 300 })
+makeAdminPatcher('teamRosters', teamRosters)
 
 // ---- store API ----
 
@@ -291,7 +309,11 @@ export function useSimulationStore() {
   // configureSlots is the single admin op the patchers can't express on its
   // own because it also has to wipe per-slot derived state. Apply locally and
   // ship the whole bundle in one patch so the server gets a consistent view.
-  function configureSlots(specs) {
+  //
+  // `rosters` (optional): { slotKey: [{ name, driver }] } — who rides in
+  // which car. Included in the same patch when given (the create-operation
+  // flow), otherwise left untouched so route regeneration keeps the roster.
+  function configureSlots(specs, rosters = null) {
     const nextTeams = makeDefaultTeams()
     for (let i = 0; i < Math.min(specs.length, SLOT_KEYS.length); i++) {
       const key = SLOT_KEYS[i]
@@ -301,6 +323,7 @@ export function useSimulationStore() {
     const nextIdeal = makeEmptyMap([])
     const nextProgress = makeEmptyMap(0)
     const nextCheating = makeCheatingMap()
+    const nextRosters = rosters ? { ...makeEmptyMap([]), ...rosters } : null
 
     // Optimistic local update.
     teams.value = nextTeams
@@ -310,6 +333,7 @@ export function useSimulationStore() {
     arrivalLog.value = []
     chatMessages.value = []
     history.value = makeEmptyHistory()
+    if (nextRosters) teamRosters.value = nextRosters
 
     if (!getAdminToken()) return
     api.adminPatch({
@@ -320,6 +344,7 @@ export function useSimulationStore() {
       arrivalLog: [],
       chatMessages: [],
       history: makeEmptyHistory(),
+      ...(nextRosters ? { teamRosters: nextRosters } : {}),
     }).catch((e) => console.warn('[sync] configureSlots patch failed:', e))
   }
 
@@ -365,6 +390,29 @@ export function useSimulationStore() {
     })
   }
 
+  // ---- operations catalog ----
+  //
+  // All of these mutate server-side state; the WS broadcast that follows
+  // updates operationsList/activeOperationId (and the whole state mirror,
+  // when the live operation switches).
+
+  async function createOperation(name, opts = {}) {
+    const res = await api.createOperation(name, opts)
+    return res?.id || null
+  }
+
+  function activateOperation(id) {
+    return api.activateOperation(id)
+  }
+
+  function renameOperation(id, name) {
+    return api.renameOperation(id, name)
+  }
+
+  function deleteOperation(id) {
+    return api.deleteOperation(id)
+  }
+
   function resetAll() {
     api.adminReset().catch((e) => {
       console.warn('[sync] adminReset failed:', e)
@@ -392,6 +440,13 @@ export function useSimulationStore() {
     operationStartTime,
     meetingPointTime,
     teamStartTimes,
+    teamRosters,
+    operationsList,
+    activeOperationId,
+    createOperation,
+    activateOperation,
+    renameOperation,
+    deleteOperation,
     connectionStatus,
     setOperationActive,
     updateTeamPosition,

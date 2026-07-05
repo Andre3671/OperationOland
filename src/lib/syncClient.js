@@ -62,6 +62,13 @@ export const api = {
   adminPatch: (patch) => postJson('/api/admin/patch', { patch }, { admin: true }),
   adminReset: () => postJson('/api/admin/reset', {}, { admin: true }),
 
+  // Operations catalog: multiple saved operations, one live at a time.
+  createOperation: (name, { copyActive = false, activate = false } = {}) =>
+    postJson('/api/admin/operations', { name, copyActive, activate }, { admin: true }),
+  activateOperation: (id) => postJson('/api/admin/operations/activate', { id }, { admin: true }),
+  renameOperation: (id, name) => postJson('/api/admin/operations/rename', { id, name }, { admin: true }),
+  deleteOperation: (id) => postJson('/api/admin/operations/delete', { id }, { admin: true }),
+
   claimSlot: (name) => postJson('/api/claim-slot', { name }),
   claimSlotKey: (team, fallbackName) => postJson('/api/claim-slot-key', { team, fallbackName }),
   releaseSlot: (team) => postJson('/api/release-slot', { team }),
@@ -107,7 +114,7 @@ export function connectSync(onState, { onStatus } = {}) {
     ws.addEventListener('message', (event) => {
       try {
         const data = JSON.parse(event.data)
-        if (data.type === 'state' && data.state) onState(data.state)
+        if (data.type === 'state' && data.state) onState(data.state, data.ops || null)
       } catch (_) {}
     })
     ws.addEventListener('close', () => {

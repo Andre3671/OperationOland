@@ -197,7 +197,14 @@ export function useAdminTracking() {
     updateTeamProgress,
     sendChatMessage,
     configureSlots,
-    releaseSlot
+    releaseSlot,
+    teamRosters,
+    operationsList,
+    activeOperationId,
+    createOperation,
+    activateOperation,
+    renameOperation,
+    deleteOperation
   } = store
   
   const isLoading = ref(false)
@@ -611,6 +618,21 @@ export function useAdminTracking() {
     const perpX = (-dx / mainDist) * perpScale
     const perpY = (dy / mainDist) * perpScale
 
+    // Where a point sits along the start→finish axis: 0 = start, 1 = finish.
+    // Settlement snapping (fetchReverse) can move a candidate tens of km from
+    // its sample point, so this is checked against the CANDIDATE's coords —
+    // a checkpoint past the finish forces the team to drive through/near the
+    // goal and then double back.
+    const axisProjection = (p) => {
+      const lat = Array.isArray(p) ? p[0] : p.lat
+      const lng = Array.isArray(p) ? p[1] : p.lng
+      return ((lat - start[0]) * dy + (lng - start[1]) * dx) / (dy * dy + dx * dx)
+    }
+    const isOnAxisSegment = (p) => {
+      const t = axisProjection(p)
+      return t >= 0.05 && t <= 0.95
+    }
+
     try {
       // Measure the direct start→finish road distance; per-team cap = × 1.15.
       genProgress.value = 'Mäter idealsträcka start → mål...'
@@ -684,7 +706,8 @@ export function useAdminTracking() {
           if (candidate
               && !isForbiddenCity(candidate.name)
               && !sharedNameKeys.has(normalizeCity(candidate.name))
-              && haversineDistance({ lat: sharedLat, lng: sharedLng }, candidate) <= MAX_CANDIDATE_DRIFT_KM) {
+              && haversineDistance({ lat: sharedLat, lng: sharedLng }, candidate) <= MAX_CANDIDATE_DRIFT_KM
+              && isOnAxisSegment(candidate)) {
             sharedData = candidate
           }
           sharedAttempts++
@@ -773,7 +796,8 @@ export function useAdminTracking() {
               if (candidate
                   && !isForbiddenCity(candidate.name)
                   && !usedNameKeys.has(normalizeCity(candidate.name))
-                  && haversineDistance({ lat: laneLat, lng: laneLng }, candidate) <= MAX_CANDIDATE_DRIFT_KM) {
+                  && haversineDistance({ lat: laneLat, lng: laneLng }, candidate) <= MAX_CANDIDATE_DRIFT_KM
+                  && isOnAxisSegment(candidate)) {
                 geoData = candidate
               }
               cpAttempts++
@@ -787,6 +811,15 @@ export function useAdminTracking() {
             teamWaypoints.push([geoData.lat, geoData.lng])
             await new Promise(r => setTimeout(r, 1500))
           }
+          // Travel order = position along the start→finish axis, not the
+          // sample order the buffer was built in. Settlement snapping can move
+          // a checkpoint far enough that raw order drives past a later
+          // checkpoint (or the finish city) and has to double back. Shared/
+          // meeting checkpoints keep the same relative order for every team
+          // since their coordinates are identical across teams.
+          teamCheckpointsBuffer.sort((a, b) => axisProjection(a) - axisProjection(b))
+          teamWaypoints.length = 1
+          for (const cp of teamCheckpointsBuffer) teamWaypoints.push([cp.lat, cp.lng])
           teamWaypoints.push(end)
           genProgress.value = `Beräknar vägnät för ${team.toUpperCase()}...`
           teamRoute = await fetchRoadRoute(teamWaypoints)
@@ -1043,5 +1076,5 @@ export function useAdminTracking() {
     if (intervalId) { clearInterval(intervalId); intervalId = null }
   })
 
-  return { activeIdealRoutes, actualRoutes, livePoints, teamSummaries, isLoading, genProgress, error, refresh, debugMode: isSimulationMode, debugPositions, toggleDebug, toggleOperation, updateTeamPosition, snapToIdeal, moveTeamCheckpoint, checkpoints, meetingPoint, globalStart, globalFinish, updateGlobalStart, updateGlobalFinish, setStartByName, setFinishByName, moveStartTo, moveFinishTo, removeCheckpoint, updateCheckpoint, updateMeetingPoint, generateRoutes, avoidHighways, isSimulationMode, isOperationActive, walkingMode, toggleWalkingMode, operationStartTime, meetingPointTime, teamProgress, teams, teamCheating, arrivalLog, chatMessages, sendChatMessage, releaseSlot, resetAll }
+  return { activeIdealRoutes, actualRoutes, livePoints, teamSummaries, isLoading, genProgress, error, refresh, debugMode: isSimulationMode, debugPositions, toggleDebug, toggleOperation, updateTeamPosition, snapToIdeal, moveTeamCheckpoint, checkpoints, meetingPoint, globalStart, globalFinish, updateGlobalStart, updateGlobalFinish, setStartByName, setFinishByName, moveStartTo, moveFinishTo, removeCheckpoint, updateCheckpoint, updateMeetingPoint, generateRoutes, avoidHighways, isSimulationMode, isOperationActive, walkingMode, toggleWalkingMode, operationStartTime, meetingPointTime, teamProgress, teams, teamCheating, arrivalLog, chatMessages, sendChatMessage, releaseSlot, resetAll, configureSlots, teamRosters, operationsList, activeOperationId, createOperation, activateOperation, renameOperation, deleteOperation }
 }

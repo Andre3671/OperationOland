@@ -76,6 +76,10 @@ function defaultState() {
     // Per-team clock start (ms epoch), stamped when the team's navigator first
     // binds a slot — "first button press wins". null until the team starts.
     teamStartTimes: emptyMap(null),
+    // Roster per slot: [{ name, driver }] — who rides in which car, with
+    // drivers flagged. Filled by the admin's create-operation flow (random
+    // distribution or manual); empty means "no roster set".
+    teamRosters: emptyMap(() => []),
   }
 }
 
@@ -84,7 +88,7 @@ const WALKING_RADIUS_M = 50
 const insertPhoto = db.prepare(`INSERT INTO photos (id, data, created_at) VALUES (?, ?, ?)
   ON CONFLICT(id) DO UPDATE SET data = excluded.data, created_at = excluded.created_at`)
 const selectPhoto = db.prepare(`SELECT data FROM photos WHERE id = ?`)
-const clearPhotos = db.prepare(`DELETE FROM photos`)
+const deletePhoto = db.prepare(`DELETE FROM photos WHERE id = ?`)
 
 // One-time migration: older blobs stored the photo data URL inline on each
 // arrival entry. Hoist those into the photos table so they stop riding along
@@ -103,37 +107,81 @@ function migrateInlinePhotos(state) {
   return changed
 }
 
-function loadState() {
-  const row = db.prepare(`SELECT value FROM kv WHERE key = 'state'`).get()
-  if (!row) {
-    const fresh = defaultState()
-    saveState(fresh)
-    return fresh
-  }
+// ---- multi-operation storage ----
+//
+// Each operation (planned, live or finished) is a full state blob stored in
+// its own kv row (`op:<id>`). `ops:index` is the catalog: which operations
+// exist and which one is live. Every existing endpoint below operates on the
+// live one. On the first boot after this feature ships, the legacy
+// single-blob `state` row is wrapped as "Operation 1" and stays live — the
+// legacy row itself is left untouched as a pre-migration backup.
+
+const upsertKv = db.prepare(`INSERT INTO kv (key, value) VALUES (?, ?)
+  ON CONFLICT(key) DO UPDATE SET value = excluded.value`)
+const selectKv = db.prepare(`SELECT value FROM kv WHERE key = ?`)
+const deleteKv = db.prepare(`DELETE FROM kv WHERE key = ?`)
+
+function newOpId() {
+  return `op-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
+}
+
+function loadOpState(id) {
+  const row = selectKv.get(`op:${id}`)
+  if (!row) return defaultState()
   try {
-    const parsed = JSON.parse(row.value)
-    const merged = { ...defaultState(), ...parsed }
-    if (migrateInlinePhotos(merged)) saveState(merged)
+    const merged = { ...defaultState(), ...JSON.parse(row.value) }
+    if (migrateInlinePhotos(merged)) upsertKv.run(`op:${id}`, JSON.stringify(merged))
     return merged
   } catch (e) {
-    console.warn('[sync] state.db blob unparseable, resetting:', e)
-    const fresh = defaultState()
-    saveState(fresh)
-    return fresh
+    console.warn(`[sync] op:${id} blob unparseable, resetting that operation:`, e)
+    return defaultState()
   }
 }
 
-const insertState = db.prepare(`INSERT INTO kv (key, value) VALUES ('state', ?)
-  ON CONFLICT(key) DO UPDATE SET value = excluded.value`)
-function saveState(s) {
-  insertState.run(JSON.stringify(s))
+let opsIndex = (() => {
+  const row = selectKv.get('ops:index')
+  if (row) {
+    try { return JSON.parse(row.value) } catch (e) { console.warn('[sync] ops:index unparseable, re-migrating:', e) }
+  }
+  return null
+})()
+
+function saveOpsIndex() {
+  upsertKv.run('ops:index', JSON.stringify(opsIndex))
 }
 
-let state = loadState()
+if (!opsIndex) {
+  const id = newOpId()
+  let initial = defaultState()
+  const legacy = selectKv.get('state')
+  if (legacy) {
+    try { initial = { ...defaultState(), ...JSON.parse(legacy.value) } } catch (e) {
+      console.warn('[sync] legacy state blob unparseable, operation 1 starts fresh:', e)
+    }
+  }
+  migrateInlinePhotos(initial)
+  opsIndex = {
+    activeId: id,
+    operations: [{ id, name: 'Operation 1', createdAt: Date.now(), updatedAt: Date.now() }],
+  }
+  upsertKv.run(`op:${id}`, JSON.stringify(initial))
+  saveOpsIndex()
+  console.log(`[sync] migrated legacy state blob → live operation "Operation 1" (${id})`)
+}
+
+function saveState(s) {
+  upsertKv.run(`op:${opsIndex.activeId}`, JSON.stringify(s))
+}
+
+function opsMeta() {
+  return { activeId: opsIndex.activeId, operations: opsIndex.operations }
+}
+
+let state = loadOpState(opsIndex.activeId)
 const wss = new WebSocketServer({ noServer: true })
 
 function broadcast() {
-  const payload = JSON.stringify({ type: 'state', state })
+  const payload = JSON.stringify({ type: 'state', state, ops: opsMeta() })
   for (const ws of wss.clients) {
     if (ws.readyState === 1) ws.send(payload)
   }
@@ -202,7 +250,7 @@ app.use(express.json({ limit: '4mb' }))
 app.get('/api/health', (_req, res) => res.json({ ok: true }))
 
 app.get('/api/state', (_req, res) => {
-  res.json({ state, adminConfigured: !!ADMIN_TOKEN })
+  res.json({ state, ops: opsMeta(), adminConfigured: !!ADMIN_TOKEN })
 })
 
 // Admin-only: bulk patch for top-level fields. Used for route generation,
@@ -215,7 +263,7 @@ app.post('/api/admin/patch', requireAdmin, (req, res) => {
     'idealRoadPaths', 'teams', 'teamProgress', 'teamCheating',
     'arrivalLog', 'chatMessages', 'isSimulationMode', 'isOperationActive',
     'history', 'walkingMode', 'operationStartTime', 'meetingPointTime',
-    'teamStartTimes',
+    'teamStartTimes', 'teamRosters',
   ]
   const next = { ...state }
   for (const key of Object.keys(patch)) {
@@ -227,8 +275,80 @@ app.post('/api/admin/patch', requireAdmin, (req, res) => {
 })
 
 app.post('/api/admin/reset', requireAdmin, (_req, res) => {
-  clearPhotos.run()
+  // Scoped to the live operation — saved operations (and their photos) must
+  // survive a reset, so only delete the photos this operation references.
+  for (const entry of state.arrivalLog || []) {
+    if (entry?.photoId) deletePhoto.run(entry.photoId)
+  }
   commit(defaultState())
+  res.json({ ok: true })
+})
+
+// ---- operations catalog ----
+
+app.get('/api/operations', (_req, res) => res.json(opsMeta()))
+
+// Create an operation: blank by default, or a snapshot of the live one
+// (copyActive: "save current as..."). Optionally make it live immediately.
+app.post('/api/admin/operations', requireAdmin, (req, res) => {
+  const name = (req.body?.name || '').toString().trim().slice(0, 80)
+  if (!name) return res.status(400).json({ error: 'name required' })
+  const id = newOpId()
+  const blob = req.body?.copyActive ? JSON.parse(JSON.stringify(state)) : defaultState()
+  upsertKv.run(`op:${id}`, JSON.stringify(blob))
+  opsIndex.operations.push({ id, name, createdAt: Date.now(), updatedAt: Date.now() })
+  if (req.body?.activate) {
+    opsIndex.activeId = id
+    state = blob
+  }
+  saveOpsIndex()
+  broadcast()
+  res.json({ ok: true, id })
+})
+
+app.post('/api/admin/operations/activate', requireAdmin, (req, res) => {
+  const id = (req.body?.id || '').toString()
+  const op = opsIndex.operations.find(o => o.id === id)
+  if (!op) return res.status(404).json({ error: 'no such operation' })
+  if (opsIndex.activeId !== id) {
+    // The live state is persisted on every commit, so switching is just a
+    // pointer swap + load — nothing about the outgoing operation is lost.
+    opsIndex.activeId = id
+    state = loadOpState(id)
+    saveOpsIndex()
+    broadcast()
+  }
+  res.json({ ok: true })
+})
+
+app.post('/api/admin/operations/rename', requireAdmin, (req, res) => {
+  const id = (req.body?.id || '').toString()
+  const name = (req.body?.name || '').toString().trim().slice(0, 80)
+  const op = opsIndex.operations.find(o => o.id === id)
+  if (!op) return res.status(404).json({ error: 'no such operation' })
+  if (!name) return res.status(400).json({ error: 'name required' })
+  op.name = name
+  op.updatedAt = Date.now()
+  saveOpsIndex()
+  broadcast()
+  res.json({ ok: true })
+})
+
+app.post('/api/admin/operations/delete', requireAdmin, (req, res) => {
+  const id = (req.body?.id || '').toString()
+  const idx = opsIndex.operations.findIndex(o => o.id === id)
+  if (idx === -1) return res.status(404).json({ error: 'no such operation' })
+  if (id === opsIndex.activeId) return res.status(409).json({ error: 'cannot delete the live operation' })
+  // Photo ids embed arrival timestamps, so they're unique per operation —
+  // deleting the ones this blob references can't touch another operation's.
+  const blob = loadOpState(id)
+  for (const entry of blob.arrivalLog || []) {
+    if (entry?.photoId) deletePhoto.run(entry.photoId)
+  }
+  deleteKv.run(`op:${id}`)
+  opsIndex.operations.splice(idx, 1)
+  saveOpsIndex()
+  broadcast()
   res.json({ ok: true })
 })
 
@@ -520,7 +640,7 @@ server.on('upgrade', (req, socket, head) => {
     return
   }
   wss.handleUpgrade(req, socket, head, (ws) => {
-    ws.send(JSON.stringify({ type: 'state', state }))
+    ws.send(JSON.stringify({ type: 'state', state, ops: opsMeta() }))
   })
 })
 

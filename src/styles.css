@@ -86,3 +86,19 @@ body{
   80%{transform:scale(1.6);opacity:0}
   100%{transform:scale(1.6);opacity:0}
 }
+
+/* Navigator: manual pins (tap to place, long-press to remove) */
+.manual-pin{
+  width:24px;height:24px;
+  box-sizing:border-box;
+  background:#ffd400;
+  border:2px solid #111;
+  border-radius:50% 50% 50% 0;
+  transform:rotate(-45deg);
+  display:flex;align-items:center;justify-content:center;
+  box-shadow:0 2px 8px rgba(0,0,0,0.55);
+}
+.manual-pin-dot{
+  width:8px;height:8px;border-radius:50%;
+  background:#111;
+}

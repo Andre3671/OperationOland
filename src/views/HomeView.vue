@@ -53,6 +53,7 @@
         :checkpoints="checkpoints"
         :activeIndex="activeIndex"
         :teamColor="teamColor"
+        :team="teamName"
       />
       <div v-else-if="teamReady && !initialCenter && !isOverlayActive" class="gps-wait">
         <div class="gps-wait-spinner"></div>

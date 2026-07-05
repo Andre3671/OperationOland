@@ -21,6 +21,8 @@ const props = defineProps({
   checkpoints: { type: Array, default: () => [] },
   activeIndex: { type: Number, default: 0 },
   teamColor: { type: String, default: '#00ccff' },
+  // Storage key for the navigator's manual pins (per team, per device).
+  team: { type: String, default: '' },
   // The parent keeps this component mounted and only hides it (v-show) while a
   // checkpoint overlay is up, so the player's pan/zoom/chosen tile layer
   // survive across checkpoints. Leaflet can't lay out tiles while display:none,
@@ -42,6 +44,78 @@ let map = null
 let tileLayer = null
 let routeLayer = null
 let checkpointLayer = null
+let pinLayer = null
+
+// Manual pins ("nålar"): the navigator taps the map to drop one and
+// long-presses (contextmenu on touch, right-click on desktop) a pin to remove
+// it. The camera never follows the team, so these are the crew's own
+// breadcrumbs for "here we are / here we've been". Device-local per team —
+// they're private notes, so they don't go through the server sync.
+const pins = ref([])
+const pinStorageKey = computed(() => `oo-manual-pins-${props.team || 'default'}`)
+
+function loadPins() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(pinStorageKey.value) || '[]')
+    pins.value = Array.isArray(raw)
+      ? raw.filter(p => p && Number.isFinite(p.lat) && Number.isFinite(p.lng))
+      : []
+  } catch (_) {
+    pins.value = []
+  }
+}
+
+function savePins() {
+  try { localStorage.setItem(pinStorageKey.value, JSON.stringify(pins.value)) } catch (_) { /* storage full/blocked — pins stay for this session only */ }
+}
+
+function drawPins() {
+  if (!map || !pinLayer) return
+  pinLayer.clearLayers()
+  for (const pin of pins.value) {
+    const placedAt = new Date(pin.ts).toLocaleTimeString('sv-SE', { hour: '2-digit', minute: '2-digit' })
+    const marker = L.marker([pin.lat, pin.lng], {
+      icon: L.divIcon({
+        className: 'manual-pin-icon',
+        html: '<div class="manual-pin"><span class="manual-pin-dot"></span></div>',
+        // The 24px pin rotates -45° around its centre, so the tip lands half a
+        // diagonal (~17px) below centre → anchor at [12, 29].
+        iconSize: [24, 24],
+        iconAnchor: [12, 29],
+      }),
+    })
+    marker.bindTooltip(`Nål ${placedAt} — långtryck för att ta bort`, { direction: 'top', offset: [0, -30] })
+    marker.on('contextmenu', (e) => {
+      L.DomEvent.stop(e)
+      removePin(pin.id)
+    })
+    marker.addTo(pinLayer)
+  }
+}
+
+function addPin(latlng) {
+  pins.value.push({
+    id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+    lat: latlng.lat,
+    lng: latlng.lng,
+    ts: Date.now(),
+  })
+  savePins()
+  drawPins()
+}
+
+function removePin(id) {
+  pins.value = pins.value.filter(p => p.id !== id)
+  savePins()
+  drawPins()
+}
+
+// Delay pin placement one beat so a double-tap zoom (or a long-press) doesn't
+// also drop a pin — dblclick/contextmenu cancels the pending add.
+let pendingPinTimer = null
+function cancelPendingPin() {
+  if (pendingPinTimer) { clearTimeout(pendingPinTimer); pendingPinTimer = null }
+}
 
 function cycleLayer() {
   layerIndex.value = (layerIndex.value + 1) % TILE_LAYERS.length
@@ -136,12 +210,33 @@ onMounted(async () => {
 
   routeLayer = L.layerGroup().addTo(map)
   checkpointLayer = L.layerGroup().addTo(map)
+  pinLayer = L.layerGroup().addTo(map)
+
+  map.on('click', (e) => {
+    cancelPendingPin()
+    const latlng = e.latlng
+    pendingPinTimer = setTimeout(() => {
+      pendingPinTimer = null
+      addPin(latlng)
+    }, 300)
+  })
+  map.on('dblclick contextmenu zoomstart movestart', cancelPendingPin)
 
   drawTacticalData()
+  loadPins()
+  drawPins()
   setTimeout(() => { map.invalidateSize() }, 200)
 })
 
+// Map only mounts once a team is picked, but a navigator handover swaps the
+// team prop — reload that team's pins instead of keeping the old set.
+watch(() => props.team, () => {
+  loadPins()
+  drawPins()
+})
+
 onBeforeUnmount(()=>{
+  cancelPendingPin()
   if (map) { map.remove(); map = null }
 })
 </script>

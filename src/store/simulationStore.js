@@ -61,6 +61,7 @@ const isOperationActive = ref(cached.isOperationActive ?? false)
 const walkingMode = ref(cached.walkingMode ?? false)
 const operationStartTime = ref(cached.operationStartTime ?? null)
 const meetingPointTime = ref(cached.meetingPointTime ?? null)
+const teamStartTimes = ref(cached.teamStartTimes || makeEmptyMap(null))
 
 export const WALKING_RADIUS_M = 50
 const connectionStatus = ref('connecting')
@@ -88,6 +89,7 @@ function applyState(serverState) {
     walkingMode.value = !!serverState.walkingMode
     operationStartTime.value = serverState.operationStartTime ?? null
     meetingPointTime.value = serverState.meetingPointTime ?? null
+    teamStartTimes.value = serverState.teamStartTimes || makeEmptyMap(null)
   } finally {
     queueMicrotask(() => { applyingRemote = false })
   }
@@ -102,8 +104,64 @@ fetchInitialState()
   .catch((e) => console.warn('[sync] initial state fetch failed:', e))
 
 connectSync(applyState, {
-  onStatus: (s) => { connectionStatus.value = s },
+  onStatus: (s) => {
+    connectionStatus.value = s
+    if (s === 'connected') {
+      flushPositionQueue()
+      retryPendingTeamStart()
+    }
+  },
 })
+
+// ---- position send queue ----
+//
+// GPS fixes on the course can't be re-captured, so a POST that fails (dead
+// spot, brief offline stretch) must not drop the point. Points are queued in
+// localStorage with their capture timestamp and replayed in order once sends
+// succeed again — the queue survives page reloads too.
+const POSITION_QUEUE_KEY = 'operation_oland_pos_queue_v1'
+const POSITION_QUEUE_MAX = 600
+
+let positionQueue = (() => {
+  try {
+    const q = JSON.parse(localStorage.getItem(POSITION_QUEUE_KEY) || '[]')
+    return Array.isArray(q) ? q : []
+  } catch { return [] }
+})()
+let flushingPositions = false
+
+function savePositionQueue() {
+  try { localStorage.setItem(POSITION_QUEUE_KEY, JSON.stringify(positionQueue)) } catch (_) {}
+}
+
+async function flushPositionQueue() {
+  if (flushingPositions) return
+  flushingPositions = true
+  try {
+    while (positionQueue.length > 0) {
+      const point = positionQueue[0]
+      await api.updateTeamPosition(point.team, point.lat, point.lng, false, point.timestamp)
+      positionQueue.shift()
+      savePositionQueue()
+    }
+  } catch (e) {
+    console.warn('[sync] position flush stalled, will retry:', e)
+  } finally {
+    flushingPositions = false
+  }
+}
+
+// A failed team-start registration is retried on reconnect — the start clock
+// matters for the results, so it can't be fire-and-forget.
+let pendingTeamStart = null
+
+function retryPendingTeamStart() {
+  if (!pendingTeamStart) return
+  const team = pendingTeamStart
+  api.recordTeamStart(team)
+    .then(() => { if (pendingTeamStart === team) pendingTeamStart = null })
+    .catch((e) => console.warn('[sync] recordTeamStart retry failed:', e))
+}
 
 // ---- admin-patch passthroughs ----
 //
@@ -154,9 +212,26 @@ export function useSimulationStore() {
 
   function updateTeamPosition(team, lat, lng, clearHistory = false) {
     if (!team) return
-    api.updateTeamPosition(team, lat, lng, clearHistory).catch((e) => {
-      console.warn('[sync] updateTeamPosition failed:', e)
-    })
+    if (clearHistory) {
+      // Seed/reset of the path — not queueable: replaying an old clear later
+      // would wipe legitimately collected points.
+      api.updateTeamPosition(team, lat, lng, true).catch((e) => {
+        console.warn('[sync] updateTeamPosition failed:', e)
+      })
+      return
+    }
+    positionQueue.push({ team, lat, lng, timestamp: Date.now() })
+    if (positionQueue.length > POSITION_QUEUE_MAX) positionQueue = positionQueue.slice(-POSITION_QUEUE_MAX)
+    savePositionQueue()
+    flushPositionQueue()
+  }
+
+  function recordTeamStart(team) {
+    if (!team) return
+    pendingTeamStart = team
+    api.recordTeamStart(team)
+      .then(() => { if (pendingTeamStart === team) pendingTeamStart = null })
+      .catch((e) => console.warn('[sync] recordTeamStart failed, retrying on reconnect:', e))
   }
 
   function registerCheating(team, seconds) {
@@ -316,9 +391,11 @@ export function useSimulationStore() {
     walkingMode,
     operationStartTime,
     meetingPointTime,
+    teamStartTimes,
     connectionStatus,
     setOperationActive,
     updateTeamPosition,
+    recordTeamStart,
     getTeamPosition,
     updateTeamProgress,
     recordCheckpointArrival,

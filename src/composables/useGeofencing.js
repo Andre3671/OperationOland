@@ -9,6 +9,7 @@ export function useGeofencing(checkpoints, activeIndex, teamNameSource) {
   const gpsError = ref(null)
   const { isSimulationMode, isOperationActive, walkingMode, history, updateTeamPosition, recordCheckpointArrival } = useSimulationStore()
   let watchId = null
+  let restartTimer = null
   let triggeredCheckpointKey = null
   let lastSentPosition = null // { lat, lng, at } of the last position POSTed
 
@@ -121,6 +122,13 @@ export function useGeofencing(checkpoints, activeIndex, teamNameSource) {
         // leaving them silently stuck with no position and no arrivals.
         // 1 = PERMISSION_DENIED, 2 = POSITION_UNAVAILABLE, 3 = TIMEOUT.
         gpsError.value = error?.code === 1 ? 'denied' : 'unavailable'
+        // A watch can die for good after POSITION_UNAVAILABLE/TIMEOUT (GPS
+        // radio cycling, screen lock). Re-arm it — except after a permission
+        // denial, where retrying can't help.
+        if (error?.code !== 1) {
+          clearTimeout(restartTimer)
+          restartTimer = setTimeout(restartTracking, 5000)
+        }
       },
       {
         enableHighAccuracy: true,
@@ -171,12 +179,30 @@ export function useGeofencing(checkpoints, activeIndex, teamNameSource) {
     }
   }
 
+  function restartTracking() {
+    stopTracking()
+    startTracking()
+  }
+
+  // Mobile browsers silently stop watchPosition while the screen is locked or
+  // the app is backgrounded, and never resume it on their own — that's how
+  // teams lose whole legs of their track. Restart the watch every time the
+  // page becomes visible again (pageshow also covers bfcache restores).
+  function handleVisibilityResume() {
+    if (document.visibilityState === 'visible') restartTracking()
+  }
+
   onMounted(() => {
     startTracking()
+    document.addEventListener('visibilitychange', handleVisibilityResume)
+    window.addEventListener('pageshow', handleVisibilityResume)
   })
 
   onUnmounted(() => {
     stopTracking()
+    clearTimeout(restartTimer)
+    document.removeEventListener('visibilitychange', handleVisibilityResume)
+    window.removeEventListener('pageshow', handleVisibilityResume)
   })
 
   return {

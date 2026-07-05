@@ -68,8 +68,9 @@ export const api = {
   setTeamName: (team, name) => postJson('/api/team-name', { team, name }),
   setTeamActive: (team, active) => postJson('/api/team-active', { team, active }),
   setTeamProgress: (team, index) => postJson('/api/team-progress', { team, index }),
-  updateTeamPosition: (team, lat, lng, clearHistory = false) =>
-    postJson('/api/team-position', { team, lat, lng, clearHistory }),
+  updateTeamPosition: (team, lat, lng, clearHistory = false, timestamp = null) =>
+    postJson('/api/team-position', { team, lat, lng, clearHistory, timestamp }),
+  recordTeamStart: (team) => postJson('/api/team-start', { team }),
   registerCheating: (team, seconds) => postJson('/api/cheating', { team, seconds }),
   recordArrival: (team, checkpoint, distanceMeters) =>
     postJson('/api/arrival', { team, checkpoint, distanceMeters }),

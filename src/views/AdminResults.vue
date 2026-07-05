@@ -101,6 +101,7 @@ const {
   history,
   idealRoadPaths,
   operationStartTime,
+  teamStartTimes,
 } = useSimulationStore()
 
 const assignedTeams = computed(() => {
@@ -207,12 +208,16 @@ const teamRows = computed(() => {
       }
     })
 
-    // Total elapsed = time from operationStartTime (or first arrival) to last arrival.
+    // Total elapsed = time from the team's own start (stamped when they
+    // pressed the start button) to their last arrival. Falls back to the
+    // admin-planned operationStartTime, then to the team's first arrival.
     let totalElapsedMs = 0
     if (arrivalsForTeam.length > 0) {
       const sorted = [...arrivalsForTeam].sort((a, b) => a.timestamp - b.timestamp)
-      const startMs = operationStartTime.value ? Date.parse(operationStartTime.value) : sorted[0].timestamp
-      totalElapsedMs = sorted[sorted.length - 1].timestamp - startMs
+      const teamStartMs = Number(teamStartTimes.value?.[teamKey]) || null
+      const startMs = teamStartMs
+        ?? (operationStartTime.value ? Date.parse(operationStartTime.value) : sorted[0].timestamp)
+      totalElapsedMs = Math.max(0, sorted[sorted.length - 1].timestamp - startMs)
     }
 
     const ideal = idealRoadPaths.value?.[teamKey]

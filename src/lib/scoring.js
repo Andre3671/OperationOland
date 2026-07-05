@@ -10,7 +10,6 @@ export const SCORING = {
   meetingBonus: 30,      // extra bonus for a 'meeting' (gemensamt) checkpoint
   cheatOffense: 5,       // deducted per cheat offense
   cheatPer30s: 1,        // deducted per 30 seconds of cheat time
-  timePerMinute: 1,      // deducted per minute since previous arrival
 }
 
 // Group team-owned checkpoints in the order admin laid them out. Mirrors
@@ -31,7 +30,6 @@ export function computeTeamScore(team, state) {
     arrival: 0,
     missionComplete: 0,
     meetingBonus: 0,
-    timePenalty: 0,
     cheatPenalty: 0,
   }
 
@@ -53,8 +51,8 @@ export function computeTeamScore(team, state) {
     breakdown.missionComplete += SCORING.missionComplete
   }
 
-  // Time penalty: one point per minute spent between consecutive arrivals.
-  // The first arrival has no baseline, so it's free. Sort oldest-first.
+  // Total time between consecutive arrivals — no longer a penalty, but kept
+  // as the leaderboard tie-breaker (fastest team wins on equal points).
   const arrivalsChronological = [...arrivals].sort((a, b) => a.timestamp - b.timestamp)
   let totalSegmentMinutes = 0
   for (let i = 1; i < arrivalsChronological.length; i += 1) {
@@ -62,7 +60,6 @@ export function computeTeamScore(team, state) {
     if (!Number.isFinite(delta) || delta <= 0) continue
     totalSegmentMinutes += delta / 60_000
   }
-  breakdown.timePenalty = -Math.round(totalSegmentMinutes * SCORING.timePerMinute)
 
   // Cheat penalty: flat per offense + 1 point per 30 seconds caught.
   breakdown.cheatPenalty = -(
@@ -70,7 +67,9 @@ export function computeTeamScore(team, state) {
     Math.floor((cheat.seconds || 0) / 30) * SCORING.cheatPer30s
   )
 
-  const total = Object.values(breakdown).reduce((sum, v) => sum + v, 0)
+  // Scores never go below zero — cheating can eat the earned points but a
+  // team should always see a plus score, not a growing minus.
+  const total = Math.max(0, Object.values(breakdown).reduce((sum, v) => sum + v, 0))
 
   return {
     team,
@@ -92,5 +91,6 @@ export function computeLeaderboard(state) {
       displayName: teams[team]?.name || team.toUpperCase(),
       color: teams[team]?.color || '#888',
     }))
-  return rows.sort((a, b) => b.total - a.total)
+  // Highest score first; on equal points the faster team ranks higher.
+  return rows.sort((a, b) => (b.total - a.total) || (a.totalMinutes - b.totalMinutes))
 }

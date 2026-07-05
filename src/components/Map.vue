@@ -29,9 +29,10 @@ const props = defineProps({
 })
 
 const TILE_LAYERS = [
-  { key: 'satellite', label: 'Satellit', short: 'SAT', url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}' },
-  { key: 'dark', label: 'Mörk karta', short: 'MAP', url: 'https://cartodb-basemaps-{s}.global.ssl.fastly.net/dark_all/{z}/{x}/{y}.png' },
-  { key: 'light', label: 'Ljus karta', short: 'LJUS', url: 'https://cartodb-basemaps-{s}.global.ssl.fastly.net/light_all/{z}/{x}/{y}.png' },
+  { key: 'osm', label: 'Karta (OSM)', short: 'OSM', url: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png', attribution: '&copy; OpenStreetMap contributors' },
+  { key: 'satellite', label: 'Satellit', short: 'SAT', url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', attribution: '&copy; Esri' },
+  { key: 'dark', label: 'Mörk karta', short: 'MAP', url: 'https://cartodb-basemaps-{s}.global.ssl.fastly.net/dark_all/{z}/{x}/{y}.png', attribution: '&copy; OpenStreetMap contributors &copy; CARTO' },
+  { key: 'light', label: 'Ljus karta', short: 'LJUS', url: 'https://cartodb-basemaps-{s}.global.ssl.fastly.net/light_all/{z}/{x}/{y}.png', attribution: '&copy; OpenStreetMap contributors &copy; CARTO' },
 ]
 const layerIndex = ref(0)
 const currentLayer = computed(() => TILE_LAYERS[layerIndex.value])
@@ -50,7 +51,7 @@ function cycleLayer() {
 function applyTileLayer() {
   if (!map) return
   if (tileLayer) map.removeLayer(tileLayer)
-  tileLayer = L.tileLayer(currentLayer.value.url, { maxZoom: 19 }).addTo(map)
+  tileLayer = L.tileLayer(currentLayer.value.url, { maxZoom: 19, attribution: currentLayer.value.attribution }).addTo(map)
 }
 
 function drawTacticalData() {

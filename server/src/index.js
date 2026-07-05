@@ -73,6 +73,9 @@ function defaultState() {
     walkingMode: false,
     operationStartTime: null, // ISO string when the operation officially starts
     meetingPointTime: null,   // ISO string when teams must be at the meeting point
+    // Per-team clock start (ms epoch), stamped when the team's navigator first
+    // binds a slot — "first button press wins". null until the team starts.
+    teamStartTimes: emptyMap(null),
   }
 }
 
@@ -212,6 +215,7 @@ app.post('/api/admin/patch', requireAdmin, (req, res) => {
     'idealRoadPaths', 'teams', 'teamProgress', 'teamCheating',
     'arrivalLog', 'chatMessages', 'isSimulationMode', 'isOperationActive',
     'history', 'walkingMode', 'operationStartTime', 'meetingPointTime',
+    'teamStartTimes',
   ]
   const next = { ...state }
   for (const key of Object.keys(patch)) {
@@ -280,9 +284,23 @@ app.post('/api/release-slot', (req, res) => {
     history: state.history.map(h => h.team === key ? { ...h, status: 'Inaktiv', path: [] } : h),
     teamProgress: { ...state.teamProgress, [key]: 0 },
     teamCheating: { ...state.teamCheating, [key]: { offenses: 0, seconds: 0 } },
+    teamStartTimes: { ...state.teamStartTimes, [key]: null },
   }
   commit(next)
   res.json({ ok: true })
+})
+
+// Per-team start clock: stamped the first time a team binds a navigator.
+// Repeat calls (page reloads, navigator handovers) are no-ops — the first
+// press wins. releaseSlot and admin reset clear it.
+app.post('/api/team-start', (req, res) => {
+  const key = (req.body?.team || '').toString().toLowerCase()
+  if (!state.teams[key]) return res.status(404).json({ error: 'no such slot' })
+  const existing = state.teamStartTimes?.[key]
+  if (existing) return res.json({ ok: true, startedAt: existing, deduped: true })
+  const startedAt = Date.now()
+  commit({ ...state, teamStartTimes: { ...(state.teamStartTimes || emptyMap(null)), [key]: startedAt } })
+  res.json({ ok: true, startedAt })
 })
 
 app.post('/api/team-name', (req, res) => {
@@ -334,8 +352,20 @@ app.post('/api/team-position', (req, res) => {
   const target = state.history.find(h => h.team.toLowerCase() === key)
   if (!target) return res.status(404).json({ error: 'no such slot' })
 
-  const nextPoint = { lat, lng, timestamp: Date.now() }
   const lastPoint = target.path?.[target.path.length - 1]
+
+  // Clients replaying a locally buffered point (offline stretch, dead spot)
+  // send its original capture time — without it the whole backlog would land
+  // on the same server clock tick and the speed filter below would reject it.
+  // Only trust timestamps that keep the path ordered and aren't from a phone
+  // with a badly skewed clock.
+  const tsRaw = Number(req.body?.timestamp)
+  const timestamp = Number.isFinite(tsRaw) &&
+    tsRaw > (lastPoint?.timestamp || 0) &&
+    tsRaw <= Date.now() + 60_000
+    ? tsRaw
+    : Date.now()
+  const nextPoint = { lat, lng, timestamp }
 
   let nextPath
   if (clearHistory || state.isSimulationMode || (lastPoint && haversine(lastPoint, nextPoint) > 50 && target.path.length < 5)) {

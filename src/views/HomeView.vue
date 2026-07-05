@@ -8,23 +8,15 @@
     </div>
     <header class="app-header">
       <div class="header-left">
-        <div class="title">OPERATION ROADTRIP // {{ linkStateLabel }}</div>
-        <div style="opacity:0.6">•</div>
+        <div class="title">OPERATION ROADTRIP<span class="title-linkstate"> // {{ linkStateLabel }}</span></div>
+        <div class="title-sep" style="opacity:0.6">•</div>
         <div class="team-name-block" v-if="teamReady">
           <span class="team-name-label">Team:</span>
-          <input
-            class="team-name-input"
-            :style="{ color: teamColor, borderColor: teamColor }"
-            v-model="editableTeamName"
-            @blur="commitTeamName"
-            @keyup.enter="$event.target.blur()"
-            :maxlength="24"
-            spellcheck="false"
-            title="Klicka för att byta lagnamn"
-          />
+          <!-- Read-only: lagnamn sätts av spelledningen, inte navigatören. -->
+          <span class="team-name-display" :style="{ color: teamColor }">{{ displayTeamName }}</span>
         </div>
       </div>
-      <div style="margin-left:auto;display:flex;align-items:center;gap:12px">
+      <div class="header-actions">
         <button v-if="teamReady" class="nav-mini-btn" @click="tutorialOpen = true" title="Visa appguiden">?</button>
         <button v-if="teamReady" class="nav-mini-btn chat-btn" @click="toggleChat">
           CHAT<span v-if="unreadChatCount > 0" class="chat-unread">{{ unreadChatCount }}</span>
@@ -68,7 +60,12 @@
       />
     </main>
 
-    <div v-if="!isOperationActive && !teamReady" class="holding-screen">
+    <!-- Join gate: FIRST screen in the flow. The player must enter their
+         admin's 6-char join code before anything else (briefing, sensors,
+         team picker). A stored code skips the gate on re-open. -->
+    <JoinGate v-if="!joined" @joined="onJoined" />
+
+    <div v-else-if="!isOperationActive && !teamReady" class="holding-screen">
       <div class="holding-frame">
         <div class="corner top-left"></div>
         <div class="corner top-right"></div>
@@ -111,6 +108,13 @@
     />
 
     <TeamPicker v-else-if="!teamReady" @select="selectTeam" class="team-picker" />
+
+    <!-- Escape hatch: joined the wrong operation / new game day → clear the
+         stored code and return to the join gate. Only shown before a team is
+         bound so it can't be hit mid-game. -->
+    <button v-if="joined && !teamReady" class="switch-op-btn" @click="changeOperation">
+      ⇄ BYT OPERATION<span v-if="joinedOpName" class="switch-op-name"> ({{ joinedOpName }})</span>
+    </button>
 
     <!-- Quick app tutorial: auto-shows once (localStorage) the first time the
          game UI appears, and can be reopened via the "?" button in the header. -->
@@ -175,12 +179,14 @@ import CheckpointOverlay from '../components/CheckpointOverlay.vue'
 import TeamPicker from '../components/TeamPicker.vue'
 import WelcomeScreen from '../components/WelcomeScreen.vue'
 import SensorPermissionGate from '../components/SensorPermissionGate.vue'
+import JoinGate from '../components/JoinGate.vue'
 import AppTutorial from '../components/AppTutorial.vue'
 import { useAntiCheat } from '../composables/useAntiCheat'
 import { useTeamCheckpoints } from '../composables/useTeamCheckpoints'
 import { useGeofencing } from '../composables/useGeofencing'
 
-import { useSimulationStore } from '../store/simulationStore'
+import { useSimulationStore, restartSync } from '../store/simulationStore'
+import { getJoinCode, getJoinOperationName, clearJoinCode } from '../lib/syncClient'
 import { colorForTeam } from '../lib/teamSlots'
 
 // Core Reactive State. Empty string until a team is picked — useGeofencing
@@ -188,7 +194,7 @@ import { colorForTeam } from '../lib/teamSlots'
 const teamRef = ref(null)
 const teamName = computed(() => teamRef.value?.toLowerCase() || '')
 
-const { getTeamPosition, updateTeamPosition, recordTeamStart, isSimulationMode, isOperationActive, walkingMode, teams, setTeamName, setTeamActive, teamCheating, chatMessages, sendChatMessage, claimSlot, claimSlotKey, connectionStatus } = useSimulationStore()
+const { getTeamPosition, updateTeamPosition, recordTeamStart, isSimulationMode, isOperationActive, walkingMode, teams, setTeamActive, teamCheating, chatMessages, sendChatMessage, claimSlot, claimSlotKey, connectionStatus } = useSimulationStore()
 
 const currentCheatingStats = computed(() => {
   if (!teamName.value) return { offenses: 0, seconds: 0 }
@@ -201,9 +207,33 @@ const activeCheckpoint = computed(() => checkpoints.value[activeIndex.value] || 
 
 const teamColor = computed(() => colorForTeam(teamName.value))
 
-const editableTeamName = ref('')
+// Team name is read-only in the app — set by the admin, displayed here.
+const displayTeamName = computed(() =>
+  teams.value[teamName.value]?.name || teamName.value.toUpperCase()
+)
+
 const welcomed = ref(false)
 const sensorsReady = ref(false)
+
+// Join gate: the player must hold a valid join code before the briefing/
+// sensor/team-picker chain starts. A stored code (previous session or a
+// ?code= link) skips straight in.
+const joined = ref(!!getJoinCode())
+const joinedOpName = ref(getJoinOperationName())
+
+function onJoined(info) {
+  joinedOpName.value = info?.name || getJoinOperationName()
+  joined.value = true
+  // The WS URL embeds the join code — reconnect so this client subscribes
+  // to the right operation and pulls its state.
+  restartSync()
+}
+
+function changeOperation() {
+  clearJoinCode()
+  joinedOpName.value = ''
+  joined.value = false
+}
 
 // App tutorial (quick UI walkthrough). Auto-opens once — the first time the
 // game UI becomes visible (team picked/restored) — then only via the "?"
@@ -247,27 +277,9 @@ function toggleChat() {
   lastSeenChatTs.value = Date.now()
 }
 
-watch(teamName, (name) => {
-  if (!name) return
-  editableTeamName.value = teams.value[name]?.name || name.toUpperCase()
-}, { immediate: true })
-
-watch(() => teams.value[teamName.value]?.name, (name) => {
-  if (name && document.activeElement?.classList?.contains('team-name-input') !== true) {
-    editableTeamName.value = name
-  }
-})
-
 watch(teams, () => {
   restoreTeamFromUrl()
 }, { deep: true })
-
-function commitTeamName() {
-  if (!teamName.value) return
-  setTeamName(teamName.value, editableTeamName.value)
-  editableTeamName.value = teams.value[teamName.value]?.name || teamName.value.toUpperCase()
-}
-
 
 // Geofencing Logic - passing reactive sources
 const { isOverlayActive, userLocation, distanceToTarget, gpsError, resetGeofence } = useGeofencing(checkpoints, activeIndex, teamName)
@@ -431,6 +443,96 @@ function sendTeamChat() {
 </script>
 
 <style scoped>
+/* ---- header overflow fix ----
+   The header title + team-name input live in .header-left; the button group
+   (?, CHAT, BYT, status dot) must NEVER be pushed off-screen on narrow
+   phones. The left side is the flexible part: it shrinks and ellipsizes,
+   the right side never shrinks. */
+.app-header {
+  /* Override the global gap so ~360px screens fit everything. */
+  gap: 8px;
+}
+
+.header-left {
+  flex: 1 1 auto;
+  min-width: 0; /* allow children to actually shrink inside flex */
+  overflow: hidden;
+}
+
+.title {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+  flex: 0 1 auto;
+}
+
+.header-actions {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: 0 0 auto; /* the buttons keep their size; the title gives way */
+}
+
+@media (max-width: 560px) {
+  .header-actions {
+    gap: 7px;
+  }
+
+  /* Drop the "// LINK-STATE" suffix and the separator dot — the status dot
+     on the right already carries that signal. */
+  .title-linkstate,
+  .title-sep {
+    display: none;
+  }
+
+  .team-name-display {
+    max-width: 9ch;
+  }
+}
+
+@media (max-width: 400px) {
+  .team-name-label {
+    display: none;
+  }
+
+  .team-name-display {
+    max-width: 8ch;
+  }
+}
+
+.switch-op-btn {
+  position: fixed;
+  left: 12px;
+  bottom: 12px;
+  z-index: 9600; /* above holding screen (5000) and welcome overlay (2100) */
+  background: rgba(0, 0, 0, 0.75);
+  border: 1px solid rgba(0, 204, 255, 0.35);
+  color: #6db9cf;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  padding: 7px 10px;
+  border-radius: 3px;
+  cursor: pointer;
+  max-width: calc(100vw - 24px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.switch-op-btn:hover {
+  background: rgba(0, 204, 255, 0.12);
+  color: #00ccff;
+}
+
+.switch-op-name {
+  opacity: 0.6;
+  text-transform: uppercase;
+}
+
 .team-name-block {
   display: flex;
   align-items: center;
@@ -441,30 +543,15 @@ function sendTeamChat() {
   opacity: 0.6;
 }
 
-.team-name-input {
-  background: transparent;
-  border: 1px solid transparent;
-  border-bottom: 1px dashed #555;
+.team-name-display {
   color: #00ccff;
-  font-family: inherit;
-  font-size: inherit;
   font-weight: 700;
   letter-spacing: 0.05em;
-  padding: 2px 6px;
-  width: 11ch;
-  outline: none;
-  border-radius: 2px;
-  transition: border-color 0.15s, background 0.15s;
   text-transform: uppercase;
-}
-
-.team-name-input:hover {
-  background: rgba(255, 255, 255, 0.04);
-}
-
-.team-name-input:focus {
-  border: 1px solid currentColor;
-  background: rgba(0, 0, 0, 0.5);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 14ch;
 }
 
 .nav-mini-btn {

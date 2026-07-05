@@ -1,5 +1,53 @@
 <template>
   <div class="admin-shell" :class="{ 'sidebar-open': sidebarOpen }">
+    <!-- Auth gate: login/register when no valid session. The legacy
+         /admin?token=SUPERTOKEN flow still works — the token is captured in
+         main.js and validated by /api/auth/me on mount. -->
+    <div v-if="!authed" class="auth-overlay">
+      <div class="auth-frame">
+        <div class="auth-corner top-left"></div>
+        <div class="auth-corner top-right"></div>
+        <div class="auth-corner bottom-left"></div>
+        <div class="auth-corner bottom-right"></div>
+
+        <div class="auth-heading">
+          <span class="auth-prefix">ADMIN //</span>
+          <span class="auth-name">OPERATION ROADTRIP</span>
+        </div>
+
+        <div v-if="!authChecked" class="auth-checking">KONTROLLERAR BEHÖRIGHET…</div>
+        <template v-else>
+          <div class="auth-tabs">
+            <button :class="{ active: authMode === 'login' }" @click="switchAuthMode('login')">LOGGA IN</button>
+            <button :class="{ active: authMode === 'register' }" @click="switchAuthMode('register')">REGISTRERA</button>
+          </div>
+
+          <form class="auth-form" @submit.prevent="submitAuth">
+            <label class="auth-label">ANVÄNDARNAMN
+              <input v-model="authUsername" class="auth-input" autocomplete="username" maxlength="32" spellcheck="false" />
+            </label>
+            <label class="auth-label">LÖSENORD
+              <input v-model="authPassword" class="auth-input" type="password" :autocomplete="authMode === 'login' ? 'current-password' : 'new-password'" />
+            </label>
+            <label v-if="authMode === 'register'" class="auth-label">UPPREPA LÖSENORD
+              <input v-model="authPassword2" class="auth-input" type="password" autocomplete="new-password" />
+            </label>
+            <div v-if="authError" class="auth-error">{{ authError }}</div>
+            <button class="auth-submit" type="submit" :disabled="authBusy || !authUsername.trim() || !authPassword">
+              {{ authBusy ? 'VERIFIERAR…' : (authMode === 'login' ? 'LOGGA IN' : 'SKAPA KONTO') }}
+            </button>
+          </form>
+
+          <p class="auth-hint">
+            Varje spelledarkonto har sin egen operationskatalog och EN live-operation åt gången.
+            Spelarna ansluter till din live-operation med dess anslutningskod.
+            {{ authMode === 'register' ? 'Användarnamn 3–32 tecken, lösenord minst 8 tecken.' : '' }}
+          </p>
+        </template>
+      </div>
+    </div>
+
+    <template v-if="authed">
     <AdminMap
       v-if="!error"
       class="admin-mapbg"
@@ -36,6 +84,8 @@
       </div>
 
       <div class="admin-header-right">
+        <span v-if="authUser" class="auth-user" :title="`Inloggad som ${authUser}`">{{ authUser }}</span>
+        <button class="header-btn" @click="logout" title="Logga ut">LOGGA UT</button>
         <router-link to="/admin/results" class="header-btn header-link" title="Resultatöversikt">RESULTAT</router-link>
         <button class="header-btn" @click="refresh" title="Uppdatera">⟳</button>
         <button
@@ -60,6 +110,15 @@
         </button>
       </div>
     </header>
+
+    <!-- Join code for the live operation — this is what the players type in
+         the app to enter THIS admin's game. -->
+    <div v-if="liveJoinCode" class="join-code-banner">
+      <span class="jcb-label">ANSLUTNINGSKOD TILL SPELARNA:</span>
+      <button class="jcb-code" @click="copyJoinCode" title="Klicka för att kopiera koden">{{ liveJoinCode }}</button>
+      <span v-if="codeCopied" class="jcb-copied">✓ KOPIERAD</span>
+      <button class="jcb-regen" @click="regenerateCode" title="Generera ny kod — den gamla slutar gälla direkt">NY KOD ⟳</button>
+    </div>
 
     <aside class="admin-sidebar" v-if="ready">
       <div class="sidebar-header">
@@ -189,6 +248,7 @@
         <div class="op-list">
           <div v-for="op in operationsList" :key="op.id" class="op-row" :class="{ 'is-live': op.id === activeOperationId }">
             <span class="op-name">{{ op.name }}</span>
+            <span v-if="op.joinCode" class="op-code" :title="'Anslutningskod: ' + op.joinCode">{{ op.joinCode }}</span>
             <span v-if="op.id === activeOperationId" class="op-live-tag">LIVE</span>
             <div class="op-row-actions">
               <button v-if="op.id !== activeOperationId" class="header-btn" @click="switchOperation(op.id)" title="Gör denna operation live">AKTIVERA</button>
@@ -512,6 +572,7 @@
         </div>
       </div>
     </div>
+    </template>
   </div>
 </template>
 
@@ -519,6 +580,8 @@
 import { ref, computed, onMounted, watch } from 'vue'
 import AdminMap from '../components/AdminMap.vue'
 import { useAdminTracking } from '../composables/useAdminTracking'
+import { restartSync } from '../store/simulationStore'
+import { authMe, authLogin, authRegister, authLogout, setAdminToken, api } from '../lib/syncClient'
 import { SLOT_DEFS, SLOT_KEYS, MAX_TEAMS } from '../lib/teamSlots'
 import { computeLeaderboard, SCORING } from '../lib/scoring'
 
@@ -579,6 +642,125 @@ const leaderboard = computed(() => computeLeaderboard({
   teamCheating: teamCheating.value,
   arrivalLog: arrivalLog.value,
 }))
+
+// ---- account auth ----
+//
+// The dashboard is scoped to a logged-in admin account (or the legacy env
+// superadmin token, captured from /admin?token= in main.js). /api/auth/me
+// validates whatever token is stored; without one the login screen shows.
+const authChecked = ref(false)
+const authed = ref(false)
+const authUser = ref('')
+const authMode = ref('login')
+const authUsername = ref('')
+const authPassword = ref('')
+const authPassword2 = ref('')
+const authError = ref('')
+const authBusy = ref(false)
+
+function switchAuthMode(mode) {
+  authMode.value = mode
+  authError.value = ''
+}
+
+// postJson errors look like: "POST /api/auth/login failed: 401 {"error":"…"}"
+// — surface the server's Swedish message when present.
+function extractServerError(e) {
+  const m = /\{.*\}/s.exec(e?.message || '')
+  if (m) {
+    try {
+      const parsed = JSON.parse(m[0])
+      if (parsed?.error) return parsed.error
+    } catch (_) { /* fall through */ }
+  }
+  return null
+}
+
+async function checkAuth() {
+  try {
+    const me = await authMe()
+    authUser.value = me.username
+    authed.value = true
+  } catch (e) {
+    if (e.status === 401) setAdminToken('') // stale/revoked token
+    authed.value = false
+  } finally {
+    authChecked.value = true
+  }
+}
+
+async function submitAuth() {
+  authError.value = ''
+  const username = authUsername.value.trim()
+  if (!username || !authPassword.value) return
+  if (authMode.value === 'register') {
+    if (authPassword.value.length < 8) { authError.value = 'Lösenordet måste vara minst 8 tecken.'; return }
+    if (authPassword.value !== authPassword2.value) { authError.value = 'Lösenorden matchar inte.'; return }
+  }
+  authBusy.value = true
+  try {
+    const res = authMode.value === 'login'
+      ? await authLogin(username, authPassword.value)
+      : await authRegister(username, authPassword.value)
+    authUser.value = res?.username || username
+    authed.value = true
+    authPassword.value = ''
+    authPassword2.value = ''
+    // The WS URL embeds the session token — reconnect so this client gets
+    // the account's live operation + catalog.
+    restartSync()
+  } catch (e) {
+    authError.value = extractServerError(e) || 'Kunde inte nå servern. Försök igen.'
+  } finally {
+    authBusy.value = false
+  }
+}
+
+async function logout() {
+  if (!confirm('Logga ut från spelledarkontot?')) return
+  await authLogout()
+  authed.value = false
+  authUser.value = ''
+  restartSync()
+}
+
+// ---- join code (live operation) ----
+
+const liveJoinCode = computed(() =>
+  operationsList.value.find(op => op.id === activeOperationId.value)?.joinCode || ''
+)
+const codeCopied = ref(false)
+
+async function copyJoinCode() {
+  const code = liveJoinCode.value
+  if (!code) return
+  try {
+    await navigator.clipboard.writeText(code)
+  } catch {
+    // Clipboard API fails in insecure contexts / when blocked — hidden
+    // textarea fallback.
+    const ta = document.createElement('textarea')
+    ta.value = code
+    ta.style.position = 'fixed'
+    ta.style.opacity = '0'
+    document.body.appendChild(ta)
+    ta.select()
+    try { document.execCommand('copy') } catch { /* nothing more we can do */ }
+    document.body.removeChild(ta)
+  }
+  codeCopied.value = true
+  setTimeout(() => { codeCopied.value = false }, 2000)
+}
+
+async function regenerateCode() {
+  if (!activeOperationId.value) return
+  if (!confirm('Generera NY anslutningskod?\n\nDen gamla koden slutar gälla direkt — spelare som redan anslutit med den tappar åtkomsten och måste ange den nya koden.')) return
+  try {
+    await api.regenerateJoinCode(activeOperationId.value)
+  } catch (e) {
+    alert('Kunde inte generera ny kod: ' + e.message)
+  }
+}
 
 const ready = ref(false)
 const sidebarOpen = ref(true)
@@ -1065,6 +1247,7 @@ function saveCheckpointEdit() {
 
 onMounted(() => {
   ready.value = true
+  checkAuth()
 })
 
 const statusClass = (status) => {
@@ -1284,6 +1467,272 @@ const toggleSharedSimulation = () => {
 .header-btn.sidebar-toggle {
   margin-left: 4px;
   padding: 6px 10px;
+}
+
+/* ---- auth (login/register) ---- */
+
+.auth-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 3000;
+  display: flex;
+  align-items: center;
+  justify-content: safe center;
+  background: #0a0a0a;
+  font-family: 'JetBrains Mono', 'Courier New', monospace;
+  color: #00ccff;
+  padding: 20px;
+  overflow: auto;
+}
+
+.auth-overlay::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(
+    0deg,
+    rgba(0, 204, 255, 0.025) 0px,
+    rgba(0, 204, 255, 0.025) 1px,
+    transparent 1px,
+    transparent 3px
+  );
+  pointer-events: none;
+}
+
+.auth-frame {
+  position: relative;
+  width: 100%;
+  max-width: 440px;
+  padding: 36px 28px;
+  background: rgba(0, 0, 0, 0.88);
+  border: 1px solid rgba(0, 204, 255, 0.3);
+  box-shadow: 0 0 60px rgba(0, 204, 255, 0.18), inset 0 0 30px rgba(0, 204, 255, 0.04);
+}
+
+.auth-corner {
+  position: absolute;
+  width: 16px;
+  height: 16px;
+  border: 2px solid #00ccff;
+  opacity: 0.8;
+}
+.auth-corner.top-left     { top: 6px;    left: 6px;    border-right: none;  border-bottom: none; }
+.auth-corner.top-right    { top: 6px;    right: 6px;   border-left: none;   border-bottom: none; }
+.auth-corner.bottom-left  { bottom: 6px; left: 6px;    border-right: none;  border-top: none; }
+.auth-corner.bottom-right { bottom: 6px; right: 6px;   border-left: none;   border-top: none; }
+
+.auth-heading {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin-bottom: 26px;
+}
+
+.auth-prefix {
+  font-size: 0.8rem;
+  opacity: 0.45;
+  letter-spacing: 0.18em;
+}
+
+.auth-name {
+  font-size: 1.15rem;
+  font-weight: 900;
+  letter-spacing: 0.12em;
+  text-shadow: 0 0 14px rgba(0, 204, 255, 0.45);
+}
+
+.auth-checking {
+  font-size: 0.8rem;
+  letter-spacing: 0.15em;
+  color: #888;
+  padding: 20px 0;
+}
+
+.auth-tabs {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 20px;
+}
+
+.auth-tabs button {
+  flex: 1;
+  background: transparent;
+  border: 1px solid rgba(0, 204, 255, 0.25);
+  color: #6a8f9c;
+  font-family: inherit;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  padding: 10px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.auth-tabs button.active {
+  border-color: #00ccff;
+  color: #00ccff;
+  background: rgba(0, 204, 255, 0.08);
+}
+
+.auth-form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.auth-label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 0.65rem;
+  letter-spacing: 0.18em;
+  color: #7a9aa6;
+}
+
+.auth-input {
+  background: #000;
+  border: 1px solid rgba(0, 204, 255, 0.35);
+  color: #fff;
+  font-family: inherit;
+  font-size: 0.95rem;
+  padding: 11px 12px;
+  outline: none;
+  border-radius: 3px;
+}
+
+.auth-input:focus {
+  border-color: #00ccff;
+  box-shadow: 0 0 14px rgba(0, 204, 255, 0.25);
+}
+
+.auth-error {
+  background: rgba(255, 51, 51, 0.1);
+  border: 1px dashed rgba(255, 51, 51, 0.5);
+  color: #ff7b7b;
+  font-size: 0.75rem;
+  line-height: 1.4;
+  padding: 9px 11px;
+}
+
+.auth-submit {
+  background: transparent;
+  border: 1px solid #00ccff;
+  color: #00ccff;
+  padding: 13px;
+  font-family: inherit;
+  font-weight: 700;
+  font-size: 0.85rem;
+  letter-spacing: 0.25em;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.auth-submit:hover:not(:disabled) {
+  background: #00ccff;
+  color: #000;
+  box-shadow: 0 0 24px rgba(0, 204, 255, 0.65);
+}
+
+.auth-submit:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.auth-hint {
+  margin: 18px 0 0;
+  font-size: 0.68rem;
+  line-height: 1.5;
+  color: #667;
+}
+
+.auth-user {
+  color: #ffcc00;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---- join code banner ---- */
+
+.join-code-banner {
+  position: absolute;
+  top: 52px;
+  left: 16px;
+  z-index: 1490;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 14px;
+  background: rgba(0, 0, 0, 0.85);
+  border: 1px solid rgba(255, 204, 0, 0.45);
+  border-radius: 4px;
+  backdrop-filter: blur(6px);
+  font-family: 'JetBrains Mono', monospace;
+}
+
+.jcb-label {
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  color: #ffcc00;
+  opacity: 0.85;
+}
+
+.jcb-code {
+  background: rgba(255, 204, 0, 0.1);
+  border: 1px dashed rgba(255, 204, 0, 0.6);
+  color: #ffcc00;
+  font-family: inherit;
+  font-size: 1.05rem;
+  font-weight: 900;
+  letter-spacing: 0.35em;
+  padding: 4px 6px 4px 12px;
+  border-radius: 3px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.jcb-code:hover {
+  background: rgba(255, 204, 0, 0.22);
+  box-shadow: 0 0 14px rgba(255, 204, 0, 0.35);
+}
+
+.jcb-copied {
+  color: #00ff99;
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+}
+
+.jcb-regen {
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: #aaa;
+  font-family: inherit;
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  padding: 5px 9px;
+  border-radius: 3px;
+  cursor: pointer;
+}
+
+.jcb-regen:hover {
+  border-color: rgba(255, 204, 0, 0.6);
+  color: #ffcc00;
+}
+
+.op-code {
+  color: #ffcc00;
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.18em;
+  font-family: 'JetBrains Mono', monospace;
+  opacity: 0.85;
 }
 
 /* ---- operations catalog ---- */

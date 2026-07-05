@@ -29,7 +29,13 @@
       "Bash(npm install *)",
       "Bash(npx cap *)",
       "Bash(./gradlew assembleDebug --no-daemon -q)",
-      "Bash(echo \"EXIT=$?\")"
+      "Bash(echo \"EXIT=$?\")",
+      "Bash(node --check \"C:\\\\Users\\\\babyb\\\\Desktop\\\\Projekt\\\\OperationOland\\\\server\\\\src\\\\index.js\")",
+      "Bash(./gradlew assembleDebug)",
+      "Bash(docker --version)",
+      "Bash(docker rm *)",
+      "Bash(docker run *)",
+      "Bash(curl -s http://localhost:18090/api/health)"
     ]
   }
 }

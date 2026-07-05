@@ -112,11 +112,14 @@ function applyOps(ops) {
 }
 
 // Bootstrap: pull initial state, then open the WS for live updates.
-fetchInitialState()
-  .then(({ state, ops }) => { applyState(state); applyOps(ops) })
-  .catch((e) => console.warn('[sync] initial state fetch failed:', e))
+function hydrate() {
+  fetchInitialState()
+    .then(({ state, ops }) => { applyState(state); applyOps(ops) })
+    .catch((e) => console.warn('[sync] initial state fetch failed:', e))
+}
 
-connectSync((state, ops) => { applyState(state); applyOps(ops) }, {
+const syncOptions = {
+  onOps: applyOps,
   onStatus: (s) => {
     connectionStatus.value = s
     if (s === 'connected') {
@@ -124,7 +127,23 @@ connectSync((state, ops) => { applyState(state); applyOps(ops) }, {
       retryPendingTeamStart()
     }
   },
-})
+}
+
+function handleSnapshot(state, ops) { applyState(state); applyOps(ops) }
+
+hydrate()
+let sync = connectSync(handleSnapshot, syncOptions)
+
+// Re-open the WS (and re-hydrate) after the client's identity changed:
+// player entered/cleared a join code, admin logged in/out. The WS URL embeds
+// the credential, so a plain reconnect on the old socket would keep the old
+// scope.
+export function restartSync() {
+  sync.close()
+  connectionStatus.value = 'connecting'
+  hydrate()
+  sync = connectSync(handleSnapshot, syncOptions)
+}
 
 // ---- position send queue ----
 //

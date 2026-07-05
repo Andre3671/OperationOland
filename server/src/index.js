@@ -1,9 +1,13 @@
 // Operation Öland sync service.
 //
-// Single source of truth for the shared mission state. Browser clients hydrate
-// over HTTP, mutate over HTTP, and subscribe to changes over a WebSocket.
-// SQLite persists the entire state as a single JSON blob — same shape the
-// browser used to put in localStorage — so the schema is the JS object below.
+// Multi-tenant mission state server. Admins register accounts; each admin
+// owns a catalog of operations and has AT MOST ONE live operation at a time.
+// Players join an operation with a 6-char JOIN CODE handed out by their
+// admin. Browser clients hydrate over HTTP, mutate over HTTP, and subscribe
+// to changes over a WebSocket — scoped to one operation's state blob.
+// SQLite persists each operation's entire state as a JSON blob — same shape
+// the browser used to put in localStorage — so the schema is the JS object
+// below.
 
 import express from 'express'
 import http from 'http'
@@ -11,6 +15,7 @@ import { WebSocketServer } from 'ws'
 import Database from 'better-sqlite3'
 import { mkdirSync } from 'fs'
 import { dirname, resolve } from 'path'
+import { randomBytes, randomInt, scryptSync, timingSafeEqual } from 'node:crypto'
 
 const PORT = parseInt(process.env.PORT || '8090', 10)
 const ADMIN_TOKEN = process.env.ADMIN_TOKEN || ''
@@ -27,6 +32,22 @@ db.exec(`CREATE TABLE IF NOT EXISTS kv (key TEXT PRIMARY KEY, value TEXT NOT NUL
 db.exec(`CREATE TABLE IF NOT EXISTS photos (
   id TEXT PRIMARY KEY,
   data TEXT NOT NULL,
+  created_at INTEGER NOT NULL
+)`)
+// Admin accounts + long-lived sessions. Passwords are scrypt-hashed (no new
+// npm deps — node:crypto only). The legacy env ADMIN_TOKEN keeps working as
+// a "superadmin" who owns every operation without an ownerId (pre-accounts
+// data) — see resolveAdmin below.
+db.exec(`CREATE TABLE IF NOT EXISTS admins (
+  id TEXT PRIMARY KEY,
+  username TEXT NOT NULL UNIQUE COLLATE NOCASE,
+  password_hash TEXT NOT NULL,
+  salt TEXT NOT NULL,
+  created_at INTEGER NOT NULL
+)`)
+db.exec(`CREATE TABLE IF NOT EXISTS sessions (
+  token TEXT PRIMARY KEY,
+  admin_id TEXT NOT NULL,
   created_at INTEGER NOT NULL
 )`)
 
@@ -90,6 +111,13 @@ const insertPhoto = db.prepare(`INSERT INTO photos (id, data, created_at) VALUES
 const selectPhoto = db.prepare(`SELECT data FROM photos WHERE id = ?`)
 const deletePhoto = db.prepare(`DELETE FROM photos WHERE id = ?`)
 
+const insertAdmin = db.prepare(`INSERT INTO admins (id, username, password_hash, salt, created_at) VALUES (?, ?, ?, ?, ?)`)
+const selectAdminByUsername = db.prepare(`SELECT * FROM admins WHERE username = ?`)
+const selectAdminById = db.prepare(`SELECT * FROM admins WHERE id = ?`)
+const insertSession = db.prepare(`INSERT INTO sessions (token, admin_id, created_at) VALUES (?, ?, ?)`)
+const deleteSession = db.prepare(`DELETE FROM sessions WHERE token = ?`)
+const selectSession = db.prepare(`SELECT s.token, s.admin_id, a.username FROM sessions s JOIN admins a ON a.id = s.admin_id WHERE s.token = ?`)
+
 // One-time migration: older blobs stored the photo data URL inline on each
 // arrival entry. Hoist those into the photos table so they stop riding along
 // in every broadcast.
@@ -107,14 +135,21 @@ function migrateInlinePhotos(state) {
   return changed
 }
 
-// ---- multi-operation storage ----
+// ---- multi-operation, multi-admin storage ----
 //
 // Each operation (planned, live or finished) is a full state blob stored in
-// its own kv row (`op:<id>`). `ops:index` is the catalog: which operations
-// exist and which one is live. Every existing endpoint below operates on the
-// live one. On the first boot after this feature ships, the legacy
-// single-blob `state` row is wrapped as "Operation 1" and stays live — the
-// legacy row itself is left untouched as a pre-migration backup.
+// its own kv row (`op:<id>`). `ops:index` is the catalog:
+//   {
+//     liveByAdmin: { '<adminId or "super">': '<opId>' },   // one live op per admin
+//     operations: [{ id, name, ownerId, joinCode, createdAt, updatedAt }],
+//   }
+// ownerId === null marks legacy operations from before accounts existed —
+// those belong to the env-token superadmin ('super'). joinCode is the 6-char
+// code players type to enter the operation; unique across ALL operations.
+// On the first boot after the accounts feature ships, the previous
+// single-live `activeId` field is folded into liveByAdmin.super and every
+// operation gets a join code. The legacy single-blob `state` row is left
+// untouched as a pre-migration backup.
 
 const upsertKv = db.prepare(`INSERT INTO kv (key, value) VALUES (?, ?)
   ON CONFLICT(key) DO UPDATE SET value = excluded.value`)
@@ -123,6 +158,14 @@ const deleteKv = db.prepare(`DELETE FROM kv WHERE key = ?`)
 
 function newOpId() {
   return `op-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
+}
+
+// Join codes: 6 chars, no confusable characters (no O/0, no I/1).
+const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
+function genJoinCode() {
+  let code = ''
+  for (let i = 0; i < 6; i++) code += CODE_ALPHABET[randomInt(CODE_ALPHABET.length)]
+  return code
 }
 
 function loadOpState(id) {
@@ -161,48 +204,256 @@ if (!opsIndex) {
   }
   migrateInlinePhotos(initial)
   opsIndex = {
-    activeId: id,
-    operations: [{ id, name: 'Operation 1', createdAt: Date.now(), updatedAt: Date.now() }],
+    liveByAdmin: {},
+    operations: [{ id, name: 'Operation 1', ownerId: null, joinCode: null, createdAt: Date.now(), updatedAt: Date.now() }],
   }
+  opsIndex.liveByAdmin.super = id
   upsertKv.run(`op:${id}`, JSON.stringify(initial))
-  saveOpsIndex()
   console.log(`[sync] migrated legacy state blob → live operation "Operation 1" (${id})`)
 }
 
-function saveState(s) {
-  upsertKv.run(`op:${opsIndex.activeId}`, JSON.stringify(s))
+// Normalize/migrate the index shape in place: pre-accounts indexes had a
+// single global `activeId` and no ownerId/joinCode on operations.
+{
+  let changed = false
+  if (!opsIndex.liveByAdmin || typeof opsIndex.liveByAdmin !== 'object') {
+    opsIndex.liveByAdmin = {}
+    changed = true
+  }
+  if (opsIndex.activeId) {
+    opsIndex.liveByAdmin.super = opsIndex.activeId
+    delete opsIndex.activeId
+    changed = true
+    console.log('[sync] migrated single-live activeId → liveByAdmin.super')
+  }
+  if (!Array.isArray(opsIndex.operations)) {
+    opsIndex.operations = []
+    changed = true
+  }
+  for (const op of opsIndex.operations) {
+    if (op.ownerId === undefined) { op.ownerId = null; changed = true }
+    if (!op.joinCode) {
+      // Uniqueness against codes assigned so far (loop below fills them all).
+      let code = genJoinCode()
+      while (opsIndex.operations.some(o => o !== op && o.joinCode === code)) code = genJoinCode()
+      op.joinCode = code
+      changed = true
+    }
+  }
+  // Drop live pointers to operations that no longer exist.
+  for (const [key, opId] of Object.entries(opsIndex.liveByAdmin)) {
+    if (!opsIndex.operations.some(o => o.id === opId)) {
+      delete opsIndex.liveByAdmin[key]
+      changed = true
+    }
+  }
+  if (changed) saveOpsIndex()
 }
 
-function opsMeta() {
-  return { activeId: opsIndex.activeId, operations: opsIndex.operations }
-}
-
-let state = loadOpState(opsIndex.activeId)
-const wss = new WebSocketServer({ noServer: true })
-
-function broadcast() {
-  const payload = JSON.stringify({ type: 'state', state, ops: opsMeta() })
-  for (const ws of wss.clients) {
-    if (ws.readyState === 1) ws.send(payload)
+function genUniqueJoinCode() {
+  for (;;) {
+    const code = genJoinCode()
+    if (!opsIndex.operations.some(o => o.joinCode === code)) return code
   }
 }
 
-function commit(next) {
-  state = next
-  saveState(state)
-  broadcast()
+// ---- op helpers ----
+
+// Owner key: admin account id, or 'super' for legacy ownerless operations
+// (owned by the env-token superadmin).
+function ownerKeyOf(op) {
+  return op.ownerId == null ? 'super' : op.ownerId
 }
 
-// ---- helpers ----
+function findOp(id) {
+  return opsIndex.operations.find(o => o.id === id) || null
+}
 
-function isAdmin(req) {
-  if (!ADMIN_TOKEN) return true // No token configured = open mode (dev).
-  return req.header('X-Admin-Token') === ADMIN_TOKEN
+function findOpByCode(code) {
+  return opsIndex.operations.find(o => o.joinCode === code) || null
+}
+
+function liveOpIdFor(adminKey) {
+  return opsIndex.liveByAdmin[adminKey] || null
+}
+
+// Catalog as seen by one admin: only their own operations, with the live
+// flag and join code. Shape matches what the client store expects
+// ({ activeId, operations }).
+function opsMetaFor(adminKey) {
+  const liveId = liveOpIdFor(adminKey)
+  return {
+    activeId: liveId,
+    operations: opsIndex.operations
+      .filter(op => ownerKeyOf(op) === adminKey)
+      .map(op => ({
+        id: op.id,
+        name: op.name,
+        joinCode: op.joinCode,
+        live: op.id === liveId,
+        createdAt: op.createdAt,
+        updatedAt: op.updatedAt,
+      })),
+  }
+}
+
+// In-memory cache of loaded op state blobs — load on demand, persist on
+// every commit. Multiple operations are live simultaneously (one per admin),
+// so there is no single global `state` anymore.
+const opStates = new Map()
+
+function getOpState(id) {
+  if (!opStates.has(id)) opStates.set(id, loadOpState(id))
+  return opStates.get(id)
+}
+
+function commitOp(id, next) {
+  opStates.set(id, next)
+  upsertKv.run(`op:${id}`, JSON.stringify(next))
+  broadcastOp(id)
+}
+
+// ---- WebSocket fan-out ----
+//
+// Each socket is tagged at upgrade time:
+//   ws.opId     — player subscribed to one operation (via join code)
+//   ws.adminKey — admin subscribed to *their current live op* (via session
+//                 token or the env superadmin token). Follows activations
+//                 automatically since delivery checks liveOpIdFor() live.
+const wss = new WebSocketServer({ noServer: true })
+
+function broadcastOp(opId) {
+  if (!opId) return
+  const state = getOpState(opId)
+  let playerPayload = null
+  const adminPayloads = new Map()
+  for (const ws of wss.clients) {
+    if (ws.readyState !== 1) continue
+    if (ws.adminKey) {
+      if (liveOpIdFor(ws.adminKey) !== opId) continue
+      let payload = adminPayloads.get(ws.adminKey)
+      if (!payload) {
+        payload = JSON.stringify({ type: 'state', state, ops: opsMetaFor(ws.adminKey) })
+        adminPayloads.set(ws.adminKey, payload)
+      }
+      ws.send(payload)
+    } else if (ws.opId === opId || (ws.followSuper && liveOpIdFor('super') === opId)) {
+      // followSuper = legacy client without a join code: tracks whatever the
+      // superadmin's live operation currently is (pre-accounts behaviour).
+      if (!playerPayload) playerPayload = JSON.stringify({ type: 'state', state })
+      ws.send(playerPayload)
+    }
+  }
+}
+
+// Catalog-only change (create/rename/delete/new code): refresh the owning
+// admin's clients without touching the state mirror.
+function broadcastOpsTo(adminKey) {
+  const payload = JSON.stringify({ type: 'ops', ops: opsMetaFor(adminKey) })
+  for (const ws of wss.clients) {
+    if (ws.readyState === 1 && ws.adminKey === adminKey) ws.send(payload)
+  }
+}
+
+// ---- auth helpers ----
+
+function hashPassword(password, salt) {
+  return scryptSync(password, salt, 64).toString('hex')
+}
+
+function verifyPassword(password, salt, expectedHex) {
+  const computed = scryptSync(password, salt, 64)
+  const expected = Buffer.from(expectedHex, 'hex')
+  return expected.length === computed.length && timingSafeEqual(computed, expected)
+}
+
+// Resolve an explicit token (header or WS query param) to an admin identity
+// { key, username, super } — or null. key is the admin account id, or
+// 'super' for the legacy env token.
+function resolveAdminToken(token) {
+  if (!token) return null
+  if (ADMIN_TOKEN && token === ADMIN_TOKEN) return { key: 'super', username: 'superadmin', super: true }
+  const row = selectSession.get(token)
+  if (row) return { key: row.admin_id, username: row.username, super: false }
+  return null
+}
+
+// Resolve the request's admin identity. Open mode (no ADMIN_TOKEN configured
+// AND no valid session token sent) treats everyone as superadmin — same dev
+// behaviour as before accounts existed.
+function resolveAdmin(req) {
+  const token = req.header('X-Admin-Token') || ''
+  const admin = resolveAdminToken(token)
+  if (admin) return admin
+  if (!ADMIN_TOKEN && !token) return { key: 'super', username: 'superadmin', super: true }
+  return null
 }
 
 function requireAdmin(req, res, next) {
-  if (!isAdmin(req)) return res.status(401).json({ error: 'admin token required' })
+  const admin = resolveAdmin(req)
+  if (!admin) return res.status(401).json({ error: 'admin token required' })
+  req.admin = admin
   next()
+}
+
+// The operation an admin request targets: that admin's own live op.
+function requireLiveOp(req, res) {
+  const liveId = liveOpIdFor(req.admin.key)
+  const op = liveId ? findOp(liveId) : null
+  if (!op) {
+    res.status(409).json({ error: 'no live operation — create/activate one first' })
+    return null
+  }
+  return op
+}
+
+// Ownership check for catalog endpoints. 404 (not 403) so other admins'
+// operation ids aren't confirmed to exist.
+function requireOwnedOp(req, res) {
+  const id = (req.body?.id || '').toString()
+  const op = findOp(id)
+  if (!op || ownerKeyOf(op) !== req.admin.key) {
+    res.status(404).json({ error: 'no such operation' })
+    return null
+  }
+  return op
+}
+
+// Resolve the operation a PLAYER request targets. `code` comes from the
+// body (POST) or query (GET). Codes only work while the operation is live.
+// Legacy clients (old APKs) send no code at all — they fall back to the
+// superadmin's live operation so the existing deployment keeps working.
+function resolvePlayerOp(req) {
+  const code = ((req.body && req.body.code) || (req.query && req.query.code) || '').toString().trim().toUpperCase()
+  if (code) {
+    const op = findOpByCode(code)
+    if (!op) return { error: 404, message: 'ogiltig kod' }
+    if (liveOpIdFor(ownerKeyOf(op)) !== op.id) return { error: 410, message: 'operationen är inte aktiv' }
+    return { op }
+  }
+  const superLive = liveOpIdFor('super')
+  const op = superLive ? findOp(superLive) : null
+  if (op) return { op }
+  return { error: 404, message: 'anslutningskod krävs' }
+}
+
+// In-memory rate limit for register/login: max 10 attempts per hour per IP.
+const AUTH_RATE_MAX = 10
+const AUTH_RATE_WINDOW_MS = 3600_000
+const authHits = new Map()
+
+function authRateLimited(req) {
+  const ip = ((req.headers['x-forwarded-for'] || '').toString().split(',')[0].trim())
+    || req.socket.remoteAddress || 'unknown'
+  const now = Date.now()
+  const hits = (authHits.get(ip) || []).filter(t => now - t < AUTH_RATE_WINDOW_MS)
+  if (hits.length >= AUTH_RATE_MAX) {
+    authHits.set(ip, hits)
+    return true
+  }
+  hits.push(now)
+  authHits.set(ip, hits)
+  return false
 }
 
 function haversine(a, b) {
@@ -273,13 +524,110 @@ app.use((req, res, next) => {
 
 app.get('/api/health', (_req, res) => res.json({ ok: true }))
 
-app.get('/api/state', (_req, res) => {
-  res.json({ state, ops: opsMeta(), adminConfigured: !!ADMIN_TOKEN })
+// ---- auth: admin accounts ----
+
+app.post('/api/auth/register', (req, res) => {
+  if (authRateLimited(req)) return res.status(429).json({ error: 'för många försök — vänta en timme' })
+  const username = (req.body?.username || '').toString().trim()
+  const password = (req.body?.password || '').toString()
+  if (username.length < 3 || username.length > 32) {
+    return res.status(400).json({ error: 'användarnamnet måste vara 3–32 tecken' })
+  }
+  if (password.length < 8) {
+    return res.status(400).json({ error: 'lösenordet måste vara minst 8 tecken' })
+  }
+  const salt = randomBytes(16).toString('hex')
+  const id = `adm-${Date.now()}-${randomBytes(4).toString('hex')}`
+  try {
+    insertAdmin.run(id, username, hashPassword(password, salt), salt, Date.now())
+  } catch (e) {
+    if (/UNIQUE/i.test(String(e && e.message))) {
+      return res.status(409).json({ error: 'användarnamnet är upptaget' })
+    }
+    throw e
+  }
+  const token = randomBytes(32).toString('hex')
+  insertSession.run(token, id, Date.now())
+  console.log(`[auth] registered admin "${username}" (${id})`)
+  res.json({ ok: true, token, username })
 })
 
-// Admin-only: bulk patch for top-level fields. Used for route generation,
-// operation flags, start/finish/meeting, ideal paths, etc.
+app.post('/api/auth/login', (req, res) => {
+  if (authRateLimited(req)) return res.status(429).json({ error: 'för många försök — vänta en timme' })
+  const username = (req.body?.username || '').toString().trim()
+  const password = (req.body?.password || '').toString()
+  const row = username ? selectAdminByUsername.get(username) : null
+  if (!row || !verifyPassword(password, row.salt, row.password_hash)) {
+    return res.status(401).json({ error: 'fel användarnamn eller lösenord' })
+  }
+  const token = randomBytes(32).toString('hex')
+  insertSession.run(token, row.id, Date.now())
+  res.json({ ok: true, token, username: row.username })
+})
+
+app.post('/api/auth/logout', (req, res) => {
+  const token = req.header('X-Admin-Token') || ''
+  if (token) deleteSession.run(token)
+  res.json({ ok: true })
+})
+
+app.get('/api/auth/me', requireAdmin, (req, res) => {
+  const meta = opsMetaFor(req.admin.key)
+  res.json({
+    username: req.admin.username,
+    isSuper: !!req.admin.super,
+    liveOpId: meta.activeId,
+    operations: meta.operations,
+  })
+})
+
+// ---- player entry: join code ----
+
+app.post('/api/join', (req, res) => {
+  const code = (req.body?.code || '').toString().trim().toUpperCase()
+  if (!code) return res.status(400).json({ error: 'code required' })
+  const op = findOpByCode(code)
+  if (!op) return res.status(404).json({ error: 'ogiltig kod' })
+  if (liveOpIdFor(ownerKeyOf(op)) !== op.id) return res.status(410).json({ error: 'operationen är inte aktiv' })
+  res.json({ ok: true, opId: op.id, name: op.name })
+})
+
+// Hydration. Admins (valid token) get their live op + catalog; players give
+// their join code (?code=XYZ); bare legacy clients fall back to the
+// superadmin's live op.
+app.get('/api/state', (req, res) => {
+  const code = (req.query?.code || '').toString().trim().toUpperCase()
+  if (code) {
+    const ctx = resolvePlayerOp(req)
+    if (ctx.error) return res.status(ctx.error).json({ error: ctx.message })
+    return res.json({
+      state: getOpState(ctx.op.id),
+      op: { id: ctx.op.id, name: ctx.op.name },
+      adminConfigured: !!ADMIN_TOKEN,
+    })
+  }
+  const admin = resolveAdmin(req)
+  if (admin) {
+    const liveId = liveOpIdFor(admin.key)
+    return res.json({
+      state: liveId ? getOpState(liveId) : defaultState(),
+      ops: opsMetaFor(admin.key),
+      adminConfigured: !!ADMIN_TOKEN,
+    })
+  }
+  const ctx = resolvePlayerOp(req) // legacy no-code fallback
+  res.json({
+    state: ctx.op ? getOpState(ctx.op.id) : defaultState(),
+    adminConfigured: !!ADMIN_TOKEN,
+  })
+})
+
+// Admin-only: bulk patch for top-level fields on the admin's LIVE operation.
+// Used for route generation, operation flags, start/finish/meeting, ideal
+// paths, etc.
 app.post('/api/admin/patch', requireAdmin, (req, res) => {
+  const op = requireLiveOp(req, res)
+  if (!op) return
   const patch = req.body?.patch
   if (!patch || typeof patch !== 'object') return res.status(400).json({ error: 'patch object required' })
   const allowed = [
@@ -289,95 +637,127 @@ app.post('/api/admin/patch', requireAdmin, (req, res) => {
     'history', 'walkingMode', 'operationStartTime', 'meetingPointTime',
     'teamStartTimes', 'teamRosters',
   ]
-  const next = { ...state }
+  const next = { ...getOpState(op.id) }
   for (const key of Object.keys(patch)) {
     if (!allowed.includes(key)) continue
     next[key] = patch[key]
   }
-  commit(next)
+  commitOp(op.id, next)
   res.json({ ok: true })
 })
 
-app.post('/api/admin/reset', requireAdmin, (_req, res) => {
-  // Scoped to the live operation — saved operations (and their photos) must
-  // survive a reset, so only delete the photos this operation references.
+app.post('/api/admin/reset', requireAdmin, (req, res) => {
+  const op = requireLiveOp(req, res)
+  if (!op) return
+  // Scoped to the admin's live operation — saved operations (and their
+  // photos) must survive a reset, so only delete the photos this operation
+  // references.
+  const state = getOpState(op.id)
   for (const entry of state.arrivalLog || []) {
     if (entry?.photoId) deletePhoto.run(entry.photoId)
   }
-  commit(defaultState())
+  commitOp(op.id, defaultState())
   res.json({ ok: true })
 })
 
-// ---- operations catalog ----
+// ---- operations catalog (scoped to the requesting admin) ----
 
-app.get('/api/operations', (_req, res) => res.json(opsMeta()))
+app.get('/api/operations', requireAdmin, (req, res) => res.json(opsMetaFor(req.admin.key)))
 
-// Create an operation: blank by default, or a snapshot of the live one
-// (copyActive: "save current as..."). Optionally make it live immediately.
+// Create an operation: blank by default, or a snapshot of the admin's live
+// one (copyActive: "save current as..."). Optionally make it live
+// immediately (replaces this admin's live op only; other admins' live
+// operations are untouched).
 app.post('/api/admin/operations', requireAdmin, (req, res) => {
   const name = (req.body?.name || '').toString().trim().slice(0, 80)
   if (!name) return res.status(400).json({ error: 'name required' })
   const id = newOpId()
-  const blob = req.body?.copyActive ? JSON.parse(JSON.stringify(state)) : defaultState()
+  const liveId = liveOpIdFor(req.admin.key)
+  const blob = (req.body?.copyActive && liveId)
+    ? JSON.parse(JSON.stringify(getOpState(liveId)))
+    : defaultState()
   upsertKv.run(`op:${id}`, JSON.stringify(blob))
-  opsIndex.operations.push({ id, name, createdAt: Date.now(), updatedAt: Date.now() })
+  opsIndex.operations.push({
+    id,
+    name,
+    ownerId: req.admin.key === 'super' ? null : req.admin.key,
+    joinCode: genUniqueJoinCode(),
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+  })
   if (req.body?.activate) {
-    opsIndex.activeId = id
-    state = blob
+    opsIndex.liveByAdmin[req.admin.key] = id
+    opStates.set(id, blob)
   }
   saveOpsIndex()
-  broadcast()
-  res.json({ ok: true, id })
+  if (req.body?.activate) broadcastOp(id)
+  else broadcastOpsTo(req.admin.key)
+  res.json({ ok: true, id, joinCode: findOp(id).joinCode })
 })
 
 app.post('/api/admin/operations/activate', requireAdmin, (req, res) => {
-  const id = (req.body?.id || '').toString()
-  const op = opsIndex.operations.find(o => o.id === id)
-  if (!op) return res.status(404).json({ error: 'no such operation' })
-  if (opsIndex.activeId !== id) {
-    // The live state is persisted on every commit, so switching is just a
-    // pointer swap + load — nothing about the outgoing operation is lost.
-    opsIndex.activeId = id
-    state = loadOpState(id)
+  const op = requireOwnedOp(req, res)
+  if (!op) return
+  if (liveOpIdFor(req.admin.key) !== op.id) {
+    // Live state is persisted on every commit, so switching is just a
+    // pointer swap — nothing about the outgoing operation is lost. Admin
+    // sockets follow automatically (delivery checks liveOpIdFor).
+    opsIndex.liveByAdmin[req.admin.key] = op.id
     saveOpsIndex()
-    broadcast()
+    broadcastOp(op.id)
   }
-  res.json({ ok: true })
+  res.json({ ok: true, joinCode: op.joinCode })
 })
 
 app.post('/api/admin/operations/rename', requireAdmin, (req, res) => {
-  const id = (req.body?.id || '').toString()
+  const op = requireOwnedOp(req, res)
+  if (!op) return
   const name = (req.body?.name || '').toString().trim().slice(0, 80)
-  const op = opsIndex.operations.find(o => o.id === id)
-  if (!op) return res.status(404).json({ error: 'no such operation' })
   if (!name) return res.status(400).json({ error: 'name required' })
   op.name = name
   op.updatedAt = Date.now()
   saveOpsIndex()
-  broadcast()
+  broadcastOpsTo(req.admin.key)
   res.json({ ok: true })
 })
 
 app.post('/api/admin/operations/delete', requireAdmin, (req, res) => {
-  const id = (req.body?.id || '').toString()
-  const idx = opsIndex.operations.findIndex(o => o.id === id)
-  if (idx === -1) return res.status(404).json({ error: 'no such operation' })
-  if (id === opsIndex.activeId) return res.status(409).json({ error: 'cannot delete the live operation' })
+  const op = requireOwnedOp(req, res)
+  if (!op) return
+  if (op.id === liveOpIdFor(req.admin.key)) return res.status(409).json({ error: 'cannot delete the live operation' })
   // Photo ids embed arrival timestamps, so they're unique per operation —
   // deleting the ones this blob references can't touch another operation's.
-  const blob = loadOpState(id)
+  const blob = getOpState(op.id)
   for (const entry of blob.arrivalLog || []) {
     if (entry?.photoId) deletePhoto.run(entry.photoId)
   }
-  deleteKv.run(`op:${id}`)
-  opsIndex.operations.splice(idx, 1)
+  deleteKv.run(`op:${op.id}`)
+  opStates.delete(op.id)
+  opsIndex.operations = opsIndex.operations.filter(o => o.id !== op.id)
   saveOpsIndex()
-  broadcast()
+  broadcastOpsTo(req.admin.key)
   res.json({ ok: true })
 })
 
+// New join code for an operation (e.g. the old one leaked). Players using
+// the old code lose access immediately — hand out the new one.
+app.post('/api/admin/operations/regenerate-code', requireAdmin, (req, res) => {
+  const op = requireOwnedOp(req, res)
+  if (!op) return
+  op.joinCode = genUniqueJoinCode()
+  op.updatedAt = Date.now()
+  saveOpsIndex()
+  broadcastOpsTo(req.admin.key)
+  res.json({ ok: true, joinCode: op.joinCode })
+})
+
+// ---- player endpoints (all scoped by join code) ----
+
 // Atomic claim. Returns assigned slot key, or 409 if no slot free.
 app.post('/api/claim-slot', (req, res) => {
+  const ctx = resolvePlayerOp(req)
+  if (ctx.error) return res.status(ctx.error).json({ error: ctx.message })
+  const state = getOpState(ctx.op.id)
   const name = (req.body?.name || '').toString().trim()
   if (!name) return res.status(400).json({ error: 'name required' })
 
@@ -398,12 +778,15 @@ app.post('/api/claim-slot', (req, res) => {
       [free]: { ...state.teams[free], name, assigned: true, active: true },
     },
   }
-  commit(next)
+  commitOp(ctx.op.id, next)
   res.json({ slot: free })
 })
 
 // Claim a specific slot by key (used by URL ?team= flow).
 app.post('/api/claim-slot-key', (req, res) => {
+  const ctx = resolvePlayerOp(req)
+  if (ctx.error) return res.status(ctx.error).json({ error: ctx.message })
+  const state = getOpState(ctx.op.id)
   const key = (req.body?.team || '').toString().toLowerCase()
   const fallbackName = (req.body?.fallbackName || '').toString().trim()
   if (!state.teams[key]?.enabled) return res.status(404).json({ error: 'slot not enabled' })
@@ -415,11 +798,14 @@ app.post('/api/claim-slot-key', (req, res) => {
       [key]: { ...state.teams[key], name, assigned: true, active: true },
     },
   }
-  commit(next)
+  commitOp(ctx.op.id, next)
   res.json({ slot: key })
 })
 
 app.post('/api/release-slot', (req, res) => {
+  const ctx = resolvePlayerOp(req)
+  if (ctx.error) return res.status(ctx.error).json({ error: ctx.message })
+  const state = getOpState(ctx.op.id)
   const key = (req.body?.team || '').toString().toLowerCase()
   if (!state.teams[key]) return res.status(404).json({ error: 'no such slot' })
   const next = {
@@ -430,7 +816,7 @@ app.post('/api/release-slot', (req, res) => {
     teamCheating: { ...state.teamCheating, [key]: { offenses: 0, seconds: 0 } },
     teamStartTimes: { ...state.teamStartTimes, [key]: null },
   }
-  commit(next)
+  commitOp(ctx.op.id, next)
   res.json({ ok: true })
 })
 
@@ -438,16 +824,22 @@ app.post('/api/release-slot', (req, res) => {
 // Repeat calls (page reloads, navigator handovers) are no-ops — the first
 // press wins. releaseSlot and admin reset clear it.
 app.post('/api/team-start', (req, res) => {
+  const ctx = resolvePlayerOp(req)
+  if (ctx.error) return res.status(ctx.error).json({ error: ctx.message })
+  const state = getOpState(ctx.op.id)
   const key = (req.body?.team || '').toString().toLowerCase()
   if (!state.teams[key]) return res.status(404).json({ error: 'no such slot' })
   const existing = state.teamStartTimes?.[key]
   if (existing) return res.json({ ok: true, startedAt: existing, deduped: true })
   const startedAt = Date.now()
-  commit({ ...state, teamStartTimes: { ...(state.teamStartTimes || emptyMap(null)), [key]: startedAt } })
+  commitOp(ctx.op.id, { ...state, teamStartTimes: { ...(state.teamStartTimes || emptyMap(null)), [key]: startedAt } })
   res.json({ ok: true, startedAt })
 })
 
 app.post('/api/team-name', (req, res) => {
+  const ctx = resolvePlayerOp(req)
+  if (ctx.error) return res.status(ctx.error).json({ error: ctx.message })
+  const state = getOpState(ctx.op.id)
   const key = (req.body?.team || '').toString().toLowerCase()
   const name = (req.body?.name || '').toString().trim()
   if (!state.teams[key]) return res.status(404).json({ error: 'no such slot' })
@@ -455,11 +847,14 @@ app.post('/api/team-name', (req, res) => {
     ...state,
     teams: { ...state.teams, [key]: { ...state.teams[key], name: name || key.toUpperCase() } },
   }
-  commit(next)
+  commitOp(ctx.op.id, next)
   res.json({ ok: true })
 })
 
 app.post('/api/team-active', (req, res) => {
+  const ctx = resolvePlayerOp(req)
+  if (ctx.error) return res.status(ctx.error).json({ error: ctx.message })
+  const state = getOpState(ctx.op.id)
   const key = (req.body?.team || '').toString().toLowerCase()
   const active = !!req.body?.active
   if (!state.teams[key]) return res.status(404).json({ error: 'no such slot' })
@@ -467,11 +862,14 @@ app.post('/api/team-active', (req, res) => {
     ...state,
     teams: { ...state.teams, [key]: { ...state.teams[key], active } },
   }
-  commit(next)
+  commitOp(ctx.op.id, next)
   res.json({ ok: true })
 })
 
 app.post('/api/team-progress', (req, res) => {
+  const ctx = resolvePlayerOp(req)
+  if (ctx.error) return res.status(ctx.error).json({ error: ctx.message })
+  const state = getOpState(ctx.op.id)
   const key = (req.body?.team || '').toString().toLowerCase()
   const indexRaw = Number(req.body?.index)
   if (!Number.isFinite(indexRaw)) return res.status(400).json({ error: 'index required' })
@@ -482,11 +880,14 @@ app.post('/api/team-progress', (req, res) => {
   const cpCount = state.checkpoints.filter(cp => (cp.team || '').toLowerCase() === key).length
   const index = Math.max(0, Math.min(indexRaw, cpCount))
   const next = { ...state, teamProgress: { ...state.teamProgress, [key]: index } }
-  commit(next)
+  commitOp(ctx.op.id, next)
   res.json({ ok: true })
 })
 
 app.post('/api/team-position', (req, res) => {
+  const ctx = resolvePlayerOp(req)
+  if (ctx.error) return res.status(ctx.error).json({ error: ctx.message })
+  const state = getOpState(ctx.op.id)
   const key = (req.body?.team || '').toString().toLowerCase()
   const lat = parseFloat(req.body?.lat)
   const lng = parseFloat(req.body?.lng)
@@ -541,11 +942,14 @@ app.post('/api/team-position', (req, res) => {
   const updated = { ...target, path: nextPath }
   updated.status = calcStatus(state, updated)
   const nextHistory = state.history.map(h => h.team === target.team ? updated : h)
-  commit({ ...state, history: nextHistory })
+  commitOp(ctx.op.id, { ...state, history: nextHistory })
   res.json({ ok: true })
 })
 
 app.post('/api/cheating', (req, res) => {
+  const ctx = resolvePlayerOp(req)
+  if (ctx.error) return res.status(ctx.error).json({ error: ctx.message })
+  const state = getOpState(ctx.op.id)
   const key = (req.body?.team || '').toString().toLowerCase()
   const seconds = Number(req.body?.seconds) || 0
   if (!state.teamCheating[key]) return res.status(404).json({ error: 'no such slot' })
@@ -560,11 +964,14 @@ app.post('/api/cheating', (req, res) => {
       },
     },
   }
-  commit(next)
+  commitOp(ctx.op.id, next)
   res.json({ ok: true })
 })
 
 app.post('/api/arrival', (req, res) => {
+  const ctx = resolvePlayerOp(req)
+  if (ctx.error) return res.status(ctx.error).json({ error: ctx.message })
+  const state = getOpState(ctx.op.id)
   const key = (req.body?.team || '').toString().toLowerCase()
   const checkpoint = req.body?.checkpoint
   const distanceMeters = req.body?.distanceMeters
@@ -585,7 +992,7 @@ app.post('/api/arrival', (req, res) => {
     timestamp: Date.now(),
   }
   const next = { ...state, arrivalLog: [entry, ...state.arrivalLog].slice(0, 300) }
-  commit(next)
+  commitOp(ctx.op.id, next)
   res.json({ ok: true })
 })
 
@@ -593,6 +1000,9 @@ app.post('/api/arrival', (req, res) => {
 // the given checkpoint. Teams upload one photo per task completion. The bytes
 // go into the photos table; only the photoId enters the broadcast state.
 app.post('/api/arrival-photo', (req, res) => {
+  const ctx = resolvePlayerOp(req)
+  if (ctx.error) return res.status(ctx.error).json({ error: ctx.message })
+  const state = getOpState(ctx.op.id)
   const key = (req.body?.team || '').toString().toLowerCase()
   const checkpointId = req.body?.checkpointId
   const photo = (req.body?.photo || '').toString()
@@ -610,12 +1020,14 @@ app.post('/api/arrival-photo', (req, res) => {
   const { photo: _legacy, ...rest } = entry
   const nextLog = state.arrivalLog.slice()
   nextLog[idx] = { ...rest, photoId, photoAt: Date.now() }
-  commit({ ...state, arrivalLog: nextLog })
+  commitOp(ctx.op.id, { ...state, arrivalLog: nextLog })
   res.json({ ok: true, photoId })
 })
 
 // Serve photo bytes. Content is immutable per id (re-uploads overwrite the
 // row but keep the same id, so cap client caching at a modest lifetime).
+// Stays global: ids embed creation timestamps and are effectively
+// unguessable.
 app.get('/api/photo/:id', (req, res) => {
   const row = selectPhoto.get(req.params.id)
   if (!row) return res.status(404).json({ error: 'photo not found' })
@@ -630,8 +1042,24 @@ app.post('/api/chat', (req, res) => {
   const text = (req.body?.text || '').toString().trim()
   if (!text) return res.status(400).json({ error: 'text required' })
 
-  // Admin-role messages require admin token. Without it, downgrade to team.
-  let role = req.body?.role === 'admin' && isAdmin(req) ? 'admin' : 'team'
+  // Admin-role messages require a valid admin identity and land in THAT
+  // admin's live operation. Without one, downgrade to team and resolve the
+  // operation by join code like every other player endpoint.
+  const admin = req.body?.role === 'admin' ? resolveAdmin(req) : null
+  let opId
+  let role
+  if (admin) {
+    opId = liveOpIdFor(admin.key)
+    if (!opId) return res.status(409).json({ error: 'no live operation' })
+    role = 'admin'
+  } else {
+    const ctx = resolvePlayerOp(req)
+    if (ctx.error) return res.status(ctx.error).json({ error: ctx.message })
+    opId = ctx.op.id
+    role = 'team'
+  }
+  const state = getOpState(opId)
+
   // Team senders must be a real slot key — otherwise a client could pass
   // sender:"admin" (or any label) and have it render as an official name.
   const senderRaw = (req.body?.sender || '').toString().toLowerCase()
@@ -649,25 +1077,75 @@ app.post('/api/chat', (req, res) => {
     timestamp: Date.now(),
   }
   const next = { ...state, chatMessages: [...state.chatMessages, msg].slice(-200) }
-  commit(next)
+  commitOp(opId, next)
   res.json({ ok: true })
 })
 
 // ---- HTTP server + WS upgrade ----
+//
+// /api/sync?code=XYZ        → player, subscribed to that live operation
+// /api/sync?token=SESSION   → admin (session token or env superadmin token),
+//                             subscribed to their live op (follows activate)
+// /api/sync                 → legacy client (old APK) — superadmin's live op
 
 const server = http.createServer(app)
 
 server.on('upgrade', (req, socket, head) => {
-  const pathname = (req.url || '').split('?')[0]
-  if (pathname !== '/api/sync') {
+  let url
+  try {
+    url = new URL(req.url || '', 'http://internal')
+  } catch {
     socket.destroy()
     return
   }
+  if (url.pathname !== '/api/sync') {
+    socket.destroy()
+    return
+  }
+  const code = (url.searchParams.get('code') || '').trim().toUpperCase()
+  const token = (url.searchParams.get('token') || '').trim()
+
+  let init = null // { opId } for players, { adminKey } for admins
+  if (code) {
+    const op = findOpByCode(code)
+    if (!op || liveOpIdFor(ownerKeyOf(op)) !== op.id) {
+      socket.write('HTTP/1.1 403 Forbidden\r\n\r\n')
+      socket.destroy()
+      return
+    }
+    init = { opId: op.id }
+  } else if (token) {
+    const admin = resolveAdminToken(token)
+    if (!admin) {
+      socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n')
+      socket.destroy()
+      return
+    }
+    init = { adminKey: admin.key }
+  } else {
+    // Legacy client without a join code — follows the superadmin's live
+    // operation, whichever it is at any moment (pre-accounts behaviour, so
+    // already-deployed APKs keep working across activations).
+    init = { followSuper: true, opId: liveOpIdFor('super') }
+  }
+
   wss.handleUpgrade(req, socket, head, (ws) => {
-    ws.send(JSON.stringify({ type: 'state', state, ops: opsMeta() }))
+    ws.opId = init.opId || null
+    ws.adminKey = init.adminKey || null
+    ws.followSuper = !!init.followSuper
+    if (ws.adminKey) {
+      const liveId = liveOpIdFor(ws.adminKey)
+      ws.send(JSON.stringify({
+        type: 'state',
+        state: liveId ? getOpState(liveId) : defaultState(),
+        ops: opsMetaFor(ws.adminKey),
+      }))
+    } else if (ws.opId) {
+      ws.send(JSON.stringify({ type: 'state', state: getOpState(ws.opId) }))
+    }
   })
 })
 
 server.listen(PORT, () => {
-  console.log(`[sync] listening on :${PORT}  (db: ${DB_PATH})  (admin token ${ADMIN_TOKEN ? 'set' : 'NOT SET — open mode'})`)
+  console.log(`[sync] listening on :${PORT}  (db: ${DB_PATH})  (superadmin token ${ADMIN_TOKEN ? 'set' : 'NOT SET — open mode'})`)
 })

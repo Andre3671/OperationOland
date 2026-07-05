@@ -24,6 +24,22 @@
           <div class="mission-divider"></div>
           <p class="mission-challenge">{{ checkpoint.challenge }}</p>
 
+          <div class="photo-row">
+            <button class="action-btn photo-btn" @click="triggerPhotoPicker" :disabled="photoUploading">
+              {{ photoUploading ? 'LADDAR UPP…' : photoUploaded ? '✓ BILD SKICKAD — TA OM' : '📷 TA / LADDA UPP BILD' }}
+            </button>
+            <input
+              ref="photoInputRef"
+              type="file"
+              accept="image/*"
+              capture="environment"
+              class="photo-input"
+              @change="handlePhotoSelected"
+            />
+            <img v-if="photoPreview" :src="photoPreview" class="photo-preview" />
+            <div v-if="photoError" class="photo-error">{{ photoError }}</div>
+          </div>
+
           <button class="action-btn task-btn" @click="handleUnlock">
             [STARTA OPERATIONEN]
           </button>
@@ -38,6 +54,22 @@
           <div v-if="checkpoint.region" class="mission-region">{{ checkpoint.region }}</div>
           <div class="mission-divider"></div>
           <p class="mission-challenge">{{ checkpoint.challenge }}</p>
+
+          <div class="photo-row">
+            <button class="action-btn photo-btn" @click="triggerPhotoPicker" :disabled="photoUploading">
+              {{ photoUploading ? 'LADDAR UPP…' : photoUploaded ? '✓ BILD SKICKAD — TA OM' : '📷 TA / LADDA UPP BILD' }}
+            </button>
+            <input
+              ref="photoInputRef"
+              type="file"
+              accept="image/*"
+              capture="environment"
+              class="photo-input"
+              @change="handlePhotoSelected"
+            />
+            <img v-if="photoPreview" :src="photoPreview" class="photo-preview" />
+            <div v-if="photoError" class="photo-error">{{ photoError }}</div>
+          </div>
 
           <div class="status-message" style="margin-top: 20px;">
             <span class="blink">●</span> AVVAKTAR SPELLEDNING...

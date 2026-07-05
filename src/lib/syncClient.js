@@ -4,6 +4,8 @@
 // store treats incoming snapshots as authoritative and just mirrors them
 // into the reactive refs the rest of the app reads.
 
+import { apiUrl, apiWsUrl } from './apiBase'
+
 const ADMIN_TOKEN_KEY = 'operation_oland_admin_token'
 
 export function getAdminToken() {
@@ -38,7 +40,7 @@ function adminHeaders() {
 async function postJson(path, body, { admin = false } = {}) {
   const headers = { 'Content-Type': 'application/json' }
   if (admin) Object.assign(headers, adminHeaders())
-  const res = await fetch(path, {
+  const res = await fetch(apiUrl(path), {
     method: 'POST',
     headers,
     body: JSON.stringify(body || {}),
@@ -51,7 +53,7 @@ async function postJson(path, body, { admin = false } = {}) {
 }
 
 export async function fetchInitialState() {
-  const res = await fetch('/api/state', { headers: adminHeaders() })
+  const res = await fetch(apiUrl('/api/state'), { headers: adminHeaders() })
   if (!res.ok) throw new Error(`GET /api/state failed: ${res.status}`)
   return res.json()
 }
@@ -95,10 +97,7 @@ export function connectSync(onState, { onStatus } = {}) {
   let retry = 0
   let reconnectTimer = null
 
-  const wsUrl = () => {
-    const proto = location.protocol === 'https:' ? 'wss:' : 'ws:'
-    return `${proto}//${location.host}/api/sync`
-  }
+  const wsUrl = () => apiWsUrl('/api/sync')
 
   function open() {
     try {

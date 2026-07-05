@@ -13,7 +13,7 @@
 
       <div class="mission-codename">
         <span class="cn-prefix">OP //</span>
-        <span class="cn-name typewriter">ÖLAND</span>
+        <span class="cn-name typewriter">ROADTRIP</span>
       </div>
 
       <div class="briefing">
@@ -164,12 +164,12 @@ const stamp = computed(() => {
   overflow: hidden;
   white-space: nowrap;
   border-right: 2px solid #00ccff;
-  animation: typing 1.4s steps(6, end) 0.2s both, caret 0.8s step-end infinite;
+  animation: typing 1.4s steps(9, end) 0.2s both, caret 0.8s step-end infinite;
 }
 
 @keyframes typing {
   from { width: 0; }
-  to   { width: 5.5ch; }
+  to   { width: 8.5ch; }
 }
 
 @keyframes caret {

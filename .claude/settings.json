@@ -25,7 +25,11 @@
       "Bash(docker stop *)",
       "Bash(taskkill //F //IM node.exe)",
       "Bash(node \"C:\\\\Users\\\\babyb\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\c--Users-babyb-Desktop-Projekt-OperationOland\\\\7c286148-1f24-44e8-800e-2a5259d3dc8c\\\\scratchpad\\\\sampler-test.mjs\")",
-      "PowerShell(npm run build)"
+      "PowerShell(npm run build)",
+      "Bash(npm install *)",
+      "Bash(npx cap *)",
+      "Bash(./gradlew assembleDebug --no-daemon -q)",
+      "Bash(echo \"EXIT=$?\")"
     ]
   }
 }

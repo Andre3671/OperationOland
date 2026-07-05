@@ -247,6 +247,30 @@ const app = express()
 // resized phone photo (~1-2 MB on the wire) fits comfortably.
 app.use(express.json({ limit: '4mb' }))
 
+// CORS for the native app (Capacitor). The Android/iOS app bundles the UI
+// and serves it from its own webview origin (https://localhost or
+// capacitor://localhost), so its /api calls are cross-origin. Browsers on
+// the website stay same-origin (nginx proxies /api) and never send these
+// origins. Preflights (OPTIONS) happen because POSTs use JSON + the
+// X-Admin-Token header.
+const APP_ORIGINS = new Set([
+  'https://localhost',      // Capacitor Android default webview origin
+  'capacitor://localhost',  // Capacitor iOS default webview origin
+  'http://localhost',       // Capacitor androidScheme: 'http' variant
+])
+app.use((req, res, next) => {
+  const origin = req.headers.origin
+  if (origin && APP_ORIGINS.has(origin)) {
+    res.setHeader('Access-Control-Allow-Origin', origin)
+    res.setHeader('Vary', 'Origin')
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-Admin-Token')
+    res.setHeader('Access-Control-Max-Age', '86400')
+  }
+  if (req.method === 'OPTIONS') return res.status(204).end()
+  next()
+})
+
 app.get('/api/health', (_req, res) => res.json({ ok: true }))
 
 app.get('/api/state', (_req, res) => {

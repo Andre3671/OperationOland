@@ -1,0 +1,8 @@
+{
+  "appId": "com.operationroadtrip.app",
+  "appName": "Operation Roadtrip",
+  "webDir": "dist",
+  "android": {
+    "allowMixedContent": false
+  }
+}

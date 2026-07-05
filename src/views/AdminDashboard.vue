@@ -17,7 +17,7 @@
 
     <header class="admin-header">
       <div class="admin-header-left">
-        <div class="admin-title">ADMIN // OPERATION ÖLAND</div>
+        <div class="admin-title">ADMIN // OPERATION ROADTRIP</div>
         <select
           v-if="operationsList.length"
           class="op-select"

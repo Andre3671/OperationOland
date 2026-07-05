@@ -1,4 +1,4 @@
-// Shared state mirror for Operation Öland.
+// Shared state mirror for Operation Roadtrip.
 //
 // Backed by a small Node/SQLite/WebSocket service (see /server). The browser
 // only ever holds a reactive mirror — every mutation goes through the API,

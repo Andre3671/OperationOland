@@ -8,7 +8,7 @@
     </div>
     <header class="app-header">
       <div class="header-left">
-        <div class="title">OPERATION ÖLAND // {{ linkStateLabel }}</div>
+        <div class="title">OPERATION ROADTRIP // {{ linkStateLabel }}</div>
         <div style="opacity:0.6">•</div>
         <div class="team-name-block" v-if="teamReady">
           <span class="team-name-label">Team:</span>
@@ -25,6 +25,7 @@
         </div>
       </div>
       <div style="margin-left:auto;display:flex;align-items:center;gap:12px">
+        <button v-if="teamReady" class="nav-mini-btn" @click="tutorialOpen = true" title="Visa appguiden">?</button>
         <button v-if="teamReady" class="nav-mini-btn chat-btn" @click="toggleChat">
           CHAT<span v-if="unreadChatCount > 0" class="chat-unread">{{ unreadChatCount }}</span>
         </button>
@@ -111,6 +112,10 @@
 
     <TeamPicker v-else-if="!teamReady" @select="selectTeam" class="team-picker" />
 
+    <!-- Quick app tutorial: auto-shows once (localStorage) the first time the
+         game UI appears, and can be reopened via the "?" button in the header. -->
+    <AppTutorial v-if="teamReady && tutorialOpen" @close="closeTutorial" />
+
     <RedLockOverlay v-if="locked" :seconds="penaltySeconds" :stats="currentCheatingStats" />
 
     <div v-if="teamReady && chatOpen" class="team-chat-panel">
@@ -170,6 +175,7 @@ import CheckpointOverlay from '../components/CheckpointOverlay.vue'
 import TeamPicker from '../components/TeamPicker.vue'
 import WelcomeScreen from '../components/WelcomeScreen.vue'
 import SensorPermissionGate from '../components/SensorPermissionGate.vue'
+import AppTutorial from '../components/AppTutorial.vue'
 import { useAntiCheat } from '../composables/useAntiCheat'
 import { useTeamCheckpoints } from '../composables/useTeamCheckpoints'
 import { useGeofencing } from '../composables/useGeofencing'
@@ -198,6 +204,24 @@ const teamColor = computed(() => colorForTeam(teamName.value))
 const editableTeamName = ref('')
 const welcomed = ref(false)
 const sensorsReady = ref(false)
+
+// App tutorial (quick UI walkthrough). Auto-opens once — the first time the
+// game UI becomes visible (team picked/restored) — then only via the "?"
+// button. localStorage read is wrapped: private-mode/blocked storage must not
+// crash the view, it just means the tutorial shows again next visit.
+const TUTORIAL_SEEN_KEY = 'oo-tutorial-seen'
+const tutorialOpen = ref(false)
+watch(teamReady, (ready) => {
+  if (!ready) return
+  let seen = true
+  try { seen = localStorage.getItem(TUTORIAL_SEEN_KEY) === '1' } catch { seen = false }
+  if (!seen) tutorialOpen.value = true
+}, { immediate: true })
+
+function closeTutorial() {
+  tutorialOpen.value = false
+  try { localStorage.setItem(TUTORIAL_SEEN_KEY, '1') } catch { /* storage blocked — shows again next session */ }
+}
 const chatOpen = ref(false)
 const teamChatDraft = ref('')
 

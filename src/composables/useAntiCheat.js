@@ -1,4 +1,5 @@
 import { ref, onMounted, onBeforeUnmount, toValue, watch } from 'vue'
+import { Capacitor } from '@capacitor/core'
 import { useSimulationStore } from '../store/simulationStore'
 
 // Grace period before a backgrounded app is treated as cheating (ms).
@@ -91,9 +92,14 @@ export function useAntiCheat(teamNameSource, disabledSource = false){
     locked.value = false
   }
 
-  function handleVisibility(){
+  // Shared reaction to "the player left the app" regardless of which signal
+  // said so: document.visibilitychange (web + webview) or Capacitor's native
+  // appStateChange (Android activity lifecycle — fires even on webviews that
+  // are flaky about visibilitychange on fast screen-off).
+  function handleHiddenChange(hidden){
     if (toValue(disabledSource)) return
-    if (document.hidden){
+    if (hidden){
+      if (visibilityTimer) return // grace countdown already running
       // Grace period before a backgrounded app counts as cheating. Kept
       // generous because real-world interruptions on a roadtrip (incoming
       // call, notification shade, screen auto-lock, the iOS camera/photo
@@ -109,6 +115,10 @@ export function useAntiCheat(teamNameSource, disabledSource = false){
     }
   }
 
+  function handleVisibility(){
+    handleHiddenChange(document.hidden)
+  }
+
   watch(() => toValue(disabledSource), (disabled) => {
     if (!disabled) return
     // Disabling means the player is legitimately at a checkpoint/meeting.
@@ -119,14 +129,31 @@ export function useAntiCheat(teamNameSource, disabledSource = false){
     if (penaltyInterval || locked.value) abortPenalty()
   })
 
+  // Native (Capacitor): also listen to the activity lifecycle. Redundant with
+  // visibilitychange on well-behaved webviews (handleHiddenChange dedupes the
+  // grace timer), but authoritative when the webview signal is missing.
+  let nativeListener = null
+
   onMounted(()=>{
     requestWakeLock()
     document.addEventListener('visibilitychange', handleVisibility)
+    if (Capacitor.isNativePlatform()) {
+      import('@capacitor/app')
+        .then(({ App }) => App.addListener('appStateChange', ({ isActive }) => {
+          if (!disposed) handleHiddenChange(!isActive)
+        }))
+        .then((handle) => {
+          nativeListener = handle
+          if (disposed) handle.remove()
+        })
+        .catch(() => {})
+    }
   })
 
   onBeforeUnmount(()=>{
     disposed = true
     document.removeEventListener('visibilitychange', handleVisibility)
+    if (nativeListener) { nativeListener.remove(); nativeListener = null }
     if (visibilityTimer){ clearTimeout(visibilityTimer); visibilityTimer = null }
     flushPenaltySeconds?.(true)
     flushPenaltySeconds = null

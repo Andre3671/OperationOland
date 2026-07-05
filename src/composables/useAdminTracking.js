@@ -1,4 +1,4 @@
-// VERSION: 1.1.1 - VIEWBOX CONSTRAINTS & STABLE ROUTING
+// VERSION: 1.2.0 - CORRIDOR-BASED SAMPLING (CPs follow the ideal road route)
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { useSimulationStore } from '../store/simulationStore'
 import { SLOT_KEYS } from '../lib/teamSlots'
@@ -34,6 +34,77 @@ function routeDistance(route) {
     total += haversineDistance(route[i - 1], route[i])
   }
   return total
+}
+
+// Corridor sampler: turns the measured ideal road route into the backbone
+// for checkpoint/meeting placement. Positions are fractions of DRIVEN
+// distance along the polyline, not of the straight start→finish line. Where
+// the road network diverges from the straight axis (coastlines, lakes),
+// axis-based sampling put CPs and the meeting hub far from any sensible
+// driving corridor and blew the per-team distance cap by 30%+ — with the
+// over-cap retry shrinking lateral offsets that weren't the problem.
+function buildRouteSampler(path) {
+  if (!Array.isArray(path) || path.length < 2) return null
+  const points = path.map(p => (Array.isArray(p) ? p : [p.lat, p.lng]))
+  const cum = [0]
+  for (let i = 1; i < points.length; i += 1) {
+    cum.push(cum[i - 1] + haversineDistance(points[i - 1], points[i]))
+  }
+  const total = cum[cum.length - 1]
+  if (!(total > 0)) return null
+
+  // [lat, lng] at fraction t (0..1) of driven distance along the route.
+  function pointAt(t) {
+    const target = Math.max(0, Math.min(1, t)) * total
+    let i = 1
+    while (i < cum.length - 1 && cum[i] < target) i += 1
+    const segLen = cum[i] - cum[i - 1]
+    const frac = segLen > 0 ? (target - cum[i - 1]) / segLen : 0
+    return [
+      points[i - 1][0] + (points[i][0] - points[i - 1][0]) * frac,
+      points[i - 1][1] + (points[i][1] - points[i - 1][1]) * frac,
+    ]
+  }
+
+  // Unit vector (degree space) perpendicular to the local route direction
+  // around t, so team lanes offset sideways from the corridor wherever it
+  // happens to bend. null on degenerate geometry — caller falls back.
+  function perpAt(t) {
+    const a = pointAt(t - 0.02)
+    const b = pointAt(t + 0.02)
+    const dLat = b[0] - a[0]
+    const dLng = b[1] - a[1]
+    const len = Math.sqrt(dLat * dLat + dLng * dLng)
+    if (!(len > 0)) return null
+    return [-dLng / len, dLat / len]
+  }
+
+  // Fraction of driven distance at the point on the polyline closest to p.
+  // Degree-space projection is fine: it only picks the nearest segment.
+  function fractionOf(p) {
+    const lat = Array.isArray(p) ? p[0] : p.lat
+    const lng = Array.isArray(p) ? p[1] : p.lng
+    let bestFrac = 0
+    let bestDist = Infinity
+    for (let i = 1; i < points.length; i += 1) {
+      const aLat = points[i - 1][0]
+      const aLng = points[i - 1][1]
+      const vLat = points[i][0] - aLat
+      const vLng = points[i][1] - aLng
+      const c2 = vLat * vLat + vLng * vLng
+      const u = c2 > 0 ? Math.max(0, Math.min(1, ((lat - aLat) * vLat + (lng - aLng) * vLng) / c2)) : 0
+      const dLat = lat - (aLat + vLat * u)
+      const dLng = lng - (aLng + vLng * u)
+      const d = dLat * dLat + dLng * dLng
+      if (d < bestDist) {
+        bestDist = d
+        bestFrac = (cum[i - 1] + (cum[i] - cum[i - 1]) * u) / total
+      }
+    }
+    return bestFrac
+  }
+
+  return { total, pointAt, perpAt, fractionOf }
 }
 
 const ESTIMATED_DRIVING_KMH = 55
@@ -618,25 +689,60 @@ export function useAdminTracking() {
     const perpX = (-dx / mainDist) * perpScale
     const perpY = (dy / mainDist) * perpScale
 
-    // Where a point sits along the start→finish axis: 0 = start, 1 = finish.
+    // Where a point sits along the journey: 0 = start, 1 = finish. Measured
+    // along the ideal ROAD route (set right after it's fetched below), with
+    // the straight axis as fallback when no road route could be measured.
     // Settlement snapping (fetchReverse) can move a candidate tens of km from
     // its sample point, so this is checked against the CANDIDATE's coords —
     // a checkpoint past the finish forces the team to drive through/near the
     // goal and then double back.
+    let corridor = null
     const axisProjection = (p) => {
       const lat = Array.isArray(p) ? p[0] : p.lat
       const lng = Array.isArray(p) ? p[1] : p.lng
       return ((lat - start[0]) * dy + (lng - start[1]) * dx) / (dy * dy + dx * dx)
     }
-    const isOnAxisSegment = (p) => {
-      const t = axisProjection(p)
+    const routeFraction = (p) => (corridor ? corridor.fractionOf(p) : axisProjection(p))
+    const isOnCorridorSegment = (p) => {
+      const t = routeFraction(p)
       return t >= 0.05 && t <= 0.95
+    }
+    // Sample point at fraction t of the journey, offset sideways from the
+    // corridor's LOCAL direction (so lanes follow the road's bends), plus an
+    // optional lat/lng jitter used by the retry loops.
+    const lanePoint = (t, offsetMult, jitterAmp = 0) => {
+      let baseLat
+      let baseLng
+      let pLat = perpX
+      let pLng = perpY
+      if (corridor) {
+        const base = corridor.pointAt(t)
+        baseLat = base[0]
+        baseLng = base[1]
+        const unit = corridor.perpAt(t)
+        if (unit) {
+          pLat = unit[0] * perpScale
+          pLng = unit[1] * perpScale
+        }
+      } else {
+        baseLat = start[0] + dy * t
+        baseLng = start[1] + dx * t
+      }
+      return [
+        baseLat + pLat * offsetMult + (Math.random() - 0.5) * jitterAmp,
+        baseLng + pLng * offsetMult + (Math.random() - 0.5) * jitterAmp,
+      ]
     }
 
     try {
       // Measure the direct start→finish road distance; per-team cap = × 1.15.
       genProgress.value = 'Mäter idealsträcka start → mål...'
       const idealRoute = await fetchRoadRoute([start, end])
+      // All sampling below follows this measured road corridor. Falls back to
+      // the straight axis when the routers only returned the 2-point
+      // straight-line path (sampler degrades to exactly the old behaviour).
+      corridor = buildRouteSampler(idealRoute)
+      if (!corridor) console.warn('[Routing] No usable ideal polyline — sampling along the straight axis.')
       if (idealRoute && idealRoute.distanceMeters) {
         maxMeters = idealRoute.distanceMeters * 1.15
         const idealKm = (idealRoute.distanceMeters / 1000).toFixed(1)
@@ -664,8 +770,12 @@ export function useAdminTracking() {
       await new Promise(r => setTimeout(r, 500))
 
       genProgress.value = 'Söker efter en central återsamlingsplats med service...'
-      const mLat = start[0] + (dy * 0.5)
-      const mLng = start[1] + (dx * 0.5)
+      // Halfway ALONG the road route, not the straight line's midpoint — on a
+      // bent corridor the straight midpoint can sit tens of km from any road
+      // the teams would drive, and the hub picked near it forces a detour.
+      const [mLat, mLng] = corridor
+        ? corridor.pointAt(0.5)
+        : [start[0] + (dy * 0.5), start[1] + (dx * 0.5)]
       const mData = await fetchMeetingHub(mLat, mLng) || await fetchReverse(mLat, mLng, true)
       if (!mData) throw new Error("Kunde inte hitta en lämplig tätort i mitten för återsamling.")
       meetingPoint.value = { lat: mData.lat, lng: mData.lng, name: mData.name + ' (Återsamling)', region: mData.region || '' }
@@ -700,14 +810,13 @@ export function useAdminTracking() {
           // Jitter the sample point so retries don't keep snapping to the same
           // forbidden settlement.
           const jitter = sharedAttempts === 0 ? 0 : (Math.random() - 0.5) * 0.08
-          const sharedLat = start[0] + (dy * (baseProgress + jitter))
-          const sharedLng = start[1] + (dx * (baseProgress + jitter))
+          const [sharedLat, sharedLng] = lanePoint(baseProgress + jitter, 0)
           const candidate = await fetchReverse(sharedLat, sharedLng, true)
           if (candidate
               && !isForbiddenCity(candidate.name)
               && !sharedNameKeys.has(normalizeCity(candidate.name))
               && haversineDistance({ lat: sharedLat, lng: sharedLng }, candidate) <= MAX_CANDIDATE_DRIFT_KM
-              && isOnAxisSegment(candidate)) {
+              && isOnCorridorSegment(candidate)) {
             sharedData = candidate
           }
           sharedAttempts++
@@ -790,14 +899,13 @@ export function useAdminTracking() {
               // Widen the jitter slightly after each failure so we don't keep
               // sampling the same forest patch.
               const widen = 1 + cpAttempts * 0.15
-              const laneLat = start[0] + (dy * progressRatio) + (perpX * offsetMult) + (Math.random() - 0.5) * cpJitter * widen
-              const laneLng = start[1] + (dx * progressRatio) + (perpY * offsetMult) + (Math.random() - 0.5) * cpJitter * widen
+              const [laneLat, laneLng] = lanePoint(progressRatio, offsetMult, cpJitter * widen)
               const candidate = await fetchReverse(laneLat, laneLng, true)
               if (candidate
                   && !isForbiddenCity(candidate.name)
                   && !usedNameKeys.has(normalizeCity(candidate.name))
                   && haversineDistance({ lat: laneLat, lng: laneLng }, candidate) <= MAX_CANDIDATE_DRIFT_KM
-                  && isOnAxisSegment(candidate)) {
+                  && isOnCorridorSegment(candidate)) {
                 geoData = candidate
               }
               cpAttempts++
@@ -811,13 +919,18 @@ export function useAdminTracking() {
             teamWaypoints.push([geoData.lat, geoData.lng])
             await new Promise(r => setTimeout(r, 1500))
           }
-          // Travel order = position along the start→finish axis, not the
-          // sample order the buffer was built in. Settlement snapping can move
-          // a checkpoint far enough that raw order drives past a later
+          // Travel order = position along the road corridor, not the sample
+          // order the buffer was built in. Settlement snapping can move a
+          // checkpoint far enough that raw order drives past a later
           // checkpoint (or the finish city) and has to double back. Shared/
           // meeting checkpoints keep the same relative order for every team
-          // since their coordinates are identical across teams.
-          teamCheckpointsBuffer.sort((a, b) => axisProjection(a) - axisProjection(b))
+          // since their coordinates are identical across teams. Fractions are
+          // precomputed: fractionOf scans the whole polyline per call, so it
+          // must not run inside the sort comparator.
+          teamCheckpointsBuffer = teamCheckpointsBuffer
+            .map((cp) => [routeFraction(cp), cp])
+            .sort((a, b) => a[0] - b[0])
+            .map((pair) => pair[1])
           teamWaypoints.length = 1
           for (const cp of teamCheckpointsBuffer) teamWaypoints.push([cp.lat, cp.lng])
           teamWaypoints.push(end)

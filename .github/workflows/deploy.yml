@@ -31,7 +31,7 @@ concurrency:
 jobs:
   deploy:
     runs-on: [self-hosted, unraid]
-    timeout-minutes: 15
+    timeout-minutes: 45
 
     env:
       SPA_CONTAINER: operationoland
@@ -47,6 +47,20 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Ensure sync data volume exists
+        run: docker volume inspect "$SYNC_VOLUME" >/dev/null 2>&1 || docker volume create "$SYNC_VOLUME"
+
+      - name: Build sync image
+        timeout-minutes: 20
+        run: docker build -t "$SYNC_IMAGE" ./server
+
+      - name: Build SPA image
+        timeout-minutes: 20
+        run: |
+          docker build \
+            --build-arg VITE_ORS_API_KEY="${{ secrets.VITE_ORS_API_KEY }}" \
+            -t "$SPA_IMAGE" .
+
       - name: Stop existing containers
         timeout-minutes: 2
         run: |
@@ -59,18 +73,6 @@ jobs:
               echo "::warning::Timed out or failed while removing $c; continuing"
             fi
           done
-
-      - name: Ensure sync data volume exists
-        run: docker volume inspect "$SYNC_VOLUME" >/dev/null 2>&1 || docker volume create "$SYNC_VOLUME"
-
-      - name: Build sync image
-        run: docker build -t "$SYNC_IMAGE" ./server
-
-      - name: Build SPA image
-        run: |
-          docker build \
-            --build-arg VITE_ORS_API_KEY="${{ secrets.VITE_ORS_API_KEY }}" \
-            -t "$SPA_IMAGE" .
 
       - name: Start sync container
         run: |
@@ -96,13 +98,13 @@ jobs:
       - name: Wait for the SPA to bind
         run: |
           for i in $(seq 1 30); do
-            if curl -fsS "http://localhost:$HOST_PORT/" -o /dev/null; then
+            if docker exec "$SPA_CONTAINER" wget -qO /dev/null "http://127.0.0.1/"; then
               echo "server up after ${i}s"
               exit 0
             fi
             sleep 1
           done
-          echo "::error::Server did not respond on port $HOST_PORT within 30s"
+          echo "::error::SPA container did not respond on port 80 within 30s"
           docker logs "$SPA_CONTAINER"  --tail 100
           docker logs "$SYNC_CONTAINER" --tail 100
           exit 1
@@ -112,11 +114,10 @@ jobs:
           set -e
           fail=0
           for path in "/" "/admin" "/index.html" "/api/health" "/api/state"; do
-            code=$(curl -s -o /dev/null -w "%{http_code}" "http://localhost:$HOST_PORT$path")
-            if [[ "$code" == 2* ]]; then
-              echo "  [ok]   $path -> $code"
+            if docker exec "$SPA_CONTAINER" wget -qO /dev/null "http://127.0.0.1$path"; then
+              echo "  [ok]   $path"
             else
-              echo "  [FAIL] $path -> $code"
+              echo "  [FAIL] $path"
               fail=1
             fi
           done

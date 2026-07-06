@@ -814,6 +814,13 @@ function isEffectActive(id) {
   return !!fx && Number(fx.expiresAt) > Date.now()
 }
 
+// Declared here (not with the create-operation block below) because the
+// immediate watcher on saboteurTeams evaluates it during setup — a later
+// declaration is a TDZ ReferenceError.
+const rosterTeams = computed(() =>
+  SLOT_KEYS.filter(key => teams.value[key]?.enabled && (teamRosters.value[key] || []).length > 0)
+)
+
 const saboteurTeams = computed(() => rosterTeams.value.filter(key => saboteurNameOf(key)))
 
 function missionsFor(key) {
@@ -1073,10 +1080,6 @@ watch(createOpTeamCount, (n) => {
   while (specs.length < count) specs.push({ name: `TEAM ${specs.length + 1}` })
   createOpTeamSpecs.value = specs
 })
-
-const rosterTeams = computed(() =>
-  SLOT_KEYS.filter(key => teams.value[key]?.enabled && (teamRosters.value[key] || []).length > 0)
-)
 
 function openCreateOperation() {
   createOpName.value = ''

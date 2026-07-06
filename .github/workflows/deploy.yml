@@ -50,12 +50,14 @@ jobs:
       - name: Stop existing containers
         timeout-minutes: 2
         run: |
-          # docker stop/rm can block for minutes if the daemon or the
-          # container's shim is wedged (seen on this host when the container
-          # was already stopped), so cap every call and fall back to rm -f.
+          # docker stop/rm can block for minutes if the daemon or a container
+          # shim is wedged, so avoid the separate graceful stop and hard-cap
+          # each forced remove. Two 20s attempts stay well inside the step
+          # timeout and make any later name conflict easier to diagnose.
           for c in "$SPA_CONTAINER" "$SYNC_CONTAINER"; do
-            timeout 30 docker stop -t 10 "$c" 2>/dev/null || true
-            timeout 30 docker rm -f "$c"      2>/dev/null || true
+            if ! timeout --kill-after=5s 20s docker rm -f "$c" 2>/dev/null; then
+              echo "::warning::Timed out or failed while removing $c; continuing"
+            fi
           done
 
       - name: Ensure sync data volume exists

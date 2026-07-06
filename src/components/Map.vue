@@ -23,6 +23,9 @@ const props = defineProps({
   teamColor: { type: String, default: '#00ccff' },
   // Storage key for the navigator's manual pins (per team, per device).
   team: { type: String, default: '' },
+  // Explore mode: show the team's own live GPS position on the map. In game
+  // mode this stays null — navigating blind is part of the game.
+  ownPosition: { type: Object, default: null }, // { lat, lng }
   // The parent keeps this component mounted and only hides it (v-show) while a
   // checkpoint overlay is up, so the player's pan/zoom/chosen tile layer
   // survive across checkpoints. Leaflet can't lay out tiles while display:none,
@@ -45,6 +48,7 @@ let tileLayer = null
 let routeLayer = null
 let checkpointLayer = null
 let pinLayer = null
+let ownPosLayer = null
 
 // Manual pins ("nålar"): the navigator taps the map to drop one and
 // long-presses (contextmenu on touch, right-click on desktop) a pin to remove
@@ -181,6 +185,31 @@ function drawTacticalData() {
   }
 }
 
+// Own live position (explore mode only). Pulsing dot in the team color.
+function drawOwnPosition() {
+  if (!map || !ownPosLayer) return
+  ownPosLayer.clearLayers()
+  const pos = props.ownPosition
+  if (!pos || !Number.isFinite(pos.lat) || !Number.isFinite(pos.lng)) return
+  L.marker([pos.lat, pos.lng], {
+    icon: L.divIcon({
+      className: 'own-pos-icon',
+      html: `<div class="own-pos-marker" style="--own-color:${props.teamColor}">
+               <span class="own-pos-pulse"></span>
+               <span class="own-pos-dot"></span>
+             </div>`,
+      iconSize: [26, 26],
+      iconAnchor: [13, 13],
+    }),
+    interactive: false,
+    zIndexOffset: 1200,
+  }).addTo(ownPosLayer)
+}
+
+watch(() => props.ownPosition, () => {
+  drawOwnPosition()
+}, { deep: true })
+
 watch(() => [props.idealRoute, props.checkpoints, props.activeIndex, walkingMode.value], () => {
   drawTacticalData()
 }, { deep: true })
@@ -211,6 +240,7 @@ onMounted(async () => {
   routeLayer = L.layerGroup().addTo(map)
   checkpointLayer = L.layerGroup().addTo(map)
   pinLayer = L.layerGroup().addTo(map)
+  ownPosLayer = L.layerGroup().addTo(map)
 
   map.on('click', (e) => {
     cancelPendingPin()
@@ -225,6 +255,7 @@ onMounted(async () => {
   drawTacticalData()
   loadPins()
   drawPins()
+  drawOwnPosition()
   setTimeout(() => { map.invalidateSize() }, 200)
 })
 

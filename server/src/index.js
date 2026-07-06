@@ -69,6 +69,10 @@ function emptyMap(value) {
 
 function defaultState() {
   return {
+    // 'game' = full competition (photo proof, anti-cheat, roles/saboteurs).
+    // 'explore' = relaxed sightseeing (no photos, no anti-cheat, own position
+    // visible, checkpoints are info stops). Chosen per operation by the admin.
+    mode: 'game',
     history: SLOT_KEYS.map(key => ({ team: key, status: 'Inaktiv', path: [] })),
     checkpoints: [],
     meetingPoint: { lat: null, lng: null, name: 'Inte satt' },
@@ -97,11 +101,63 @@ function defaultState() {
     // Per-team clock start (ms epoch), stamped when the team's navigator first
     // binds a slot — "first button press wins". null until the team starts.
     teamStartTimes: emptyMap(null),
-    // Roster per slot: [{ name, driver }] — who rides in which car, with
-    // drivers flagged. Filled by the admin's create-operation flow (random
-    // distribution or manual); empty means "no roster set".
+    // Roster per slot: [{ name, driver, role }] — who rides in which car,
+    // with drivers flagged. role is 'sabotor' for the team's hidden saboteur
+    // (at most one per team, assigned by the admin) or absent/null. Filled by
+    // the admin's create-operation flow (random distribution or manual);
+    // empty means "no roster set".
     teamRosters: emptyMap(() => []),
+    // Secret saboteur missions (game mode): [{ id, team, targetTeam, text,
+    // done, doneAt }]. `team` is the saboteur's OWN slot; `targetTeam` is the
+    // team the prank targets. Created/edited by the admin, revealed in the
+    // results. Completions are logged only — no automatic penalties; the
+    // game leader decides consequences.
+    sabotageMissions: [],
+    // ACTIVE sabotage effects (game mode): digital abilities a saboteur fires
+    // from their own phone at another team's navigator device.
+    // [{ id, type, targetTeam, byTeam, params, createdAt, expiresAt }].
+    // Expired entries are pruned lazily on every commit; the victim client
+    // renders whatever is active for its team.
+    sabotageEffects: [],
+    // Permanent log of every ability use: [{ id, type, byTeam, byName,
+    // targetTeam, at }]. Doubles as the charge/cooldown ledger (charges left
+    // = maxUses − count, cooldown = time since the saboteur's last entry)
+    // and as the admin's live sabotage feed + results reveal.
+    sabotageLog: [],
   }
+}
+
+// ---- sabotage abilities (game mode) ----
+//
+// Hand-synced with src/lib/sabotageAbilities.js — the server has no build
+// step, so if you add an ability there, add it here too.
+// `cost` = points deducted from the saboteur's OWN team's total score per
+// use (recorded on the log entry; scoring reads the log). Nastier effects
+// cost more — sabotage is a strategic tradeoff, not a free win.
+const SABOTAGE_ABILITIES = {
+  'fake-target': { durationMs: 5 * 60_000, maxUses: 2, cost: 25 },     // FLYTTA MÅL
+  'screen-lock': { durationMs: 60_000, maxUses: 2, cost: 20 },         // LÅS SKÄRM
+  'compass-jam': { durationMs: 90_000, maxUses: 2, cost: 15 },         // KOMPASSTÖRNING
+  'fake-transmission': { durationMs: 45_000, maxUses: 2, cost: 10 },   // FALSK SÄNDNING
+  'static-noise': { durationMs: 45_000, maxUses: 2, cost: 10 },        // BILDSTÖRNING
+}
+// One global cooldown per saboteur across ALL abilities.
+const SABOTAGE_COOLDOWN_MS = 10 * 60_000
+
+const FAKE_TRANSMISSION_MESSAGES = [
+  'PRIO 1: Samtliga enheter — invänta ny order från högkvarteret. Avvakta på plats.',
+  'VARNING: Främmande signatur upptäckt i ert område. Rapportera omedelbart till spelledningen.',
+  'ORDER: Byt frekvens till 142.9 MHz och bekräfta med kodordet "BLÅBÄR".',
+  'UNDERRÄTTELSE: Ett av lagen misstänks för dubbelspel. Lita inte på chatten.',
+  'HQ: Er rutt kan vara komprometterad. Dubbelkolla nästa mål noggrant.',
+]
+
+function pruneExpiredEffects(next) {
+  if (!Array.isArray(next.sabotageEffects) || next.sabotageEffects.length === 0) return next
+  const now = Date.now()
+  const kept = next.sabotageEffects.filter(e => e && Number(e.expiresAt) > now)
+  if (kept.length === next.sabotageEffects.length) return next
+  return { ...next, sabotageEffects: kept }
 }
 
 const WALKING_RADIUS_M = 50
@@ -308,6 +364,10 @@ function getOpState(id) {
 }
 
 function commitOp(id, next) {
+  // Lazy cleanup: expired sabotage effects drop out on the next commit
+  // (positions arrive constantly while an operation is live, so in practice
+  // this keeps the broadcast state tidy within seconds of expiry).
+  next = pruneExpiredEffects(next)
   opStates.set(id, next)
   upsertKv.run(`op:${id}`, JSON.stringify(next))
   broadcastOp(id)
@@ -589,7 +649,10 @@ app.post('/api/join', (req, res) => {
   const op = findOpByCode(code)
   if (!op) return res.status(404).json({ error: 'ogiltig kod' })
   if (liveOpIdFor(ownerKeyOf(op)) !== op.id) return res.status(410).json({ error: 'operationen är inte aktiv' })
-  res.json({ ok: true, opId: op.id, name: op.name })
+  // Include the operation's mode so the client knows early (before the first
+  // WS snapshot) whether it should behave as GAME or EXPLORE.
+  const mode = getOpState(op.id).mode === 'explore' ? 'explore' : 'game'
+  res.json({ ok: true, opId: op.id, name: op.name, mode })
 })
 
 // Hydration. Admins (valid token) get their live op + catalog; players give
@@ -635,7 +698,8 @@ app.post('/api/admin/patch', requireAdmin, (req, res) => {
     'idealRoadPaths', 'teams', 'teamProgress', 'teamCheating',
     'arrivalLog', 'chatMessages', 'isSimulationMode', 'isOperationActive',
     'history', 'walkingMode', 'operationStartTime', 'meetingPointTime',
-    'teamStartTimes', 'teamRosters',
+    'teamStartTimes', 'teamRosters', 'mode', 'sabotageMissions',
+    'sabotageEffects', 'sabotageLog',
   ]
   const next = { ...getOpState(op.id) }
   for (const key of Object.keys(patch)) {
@@ -950,6 +1014,9 @@ app.post('/api/cheating', (req, res) => {
   const ctx = resolvePlayerOp(req)
   if (ctx.error) return res.status(ctx.error).json({ error: ctx.message })
   const state = getOpState(ctx.op.id)
+  // Explore mode has no anti-cheat: accept and ignore, so stale clients (or
+  // a race around a mode switch) can't accrue penalties.
+  if ((state.mode || 'game') === 'explore') return res.json({ ok: true, ignored: true })
   const key = (req.body?.team || '').toString().toLowerCase()
   const seconds = Number(req.body?.seconds) || 0
   if (!state.teamCheating[key]) return res.status(404).json({ error: 'no such slot' })
@@ -966,6 +1033,164 @@ app.post('/api/cheating', (req, res) => {
   }
   commitOp(ctx.op.id, next)
   res.json({ ok: true })
+})
+
+// ---- roles & sabotage (game mode) ----
+//
+// Every player checks their own role on their own phone: pick team + own
+// roster name → 'agent' (no missions) or 'sabotor' (their secret missions).
+// No extra auth beyond the join code — party-game trust level.
+
+function findRosterEntry(state, teamKey, name) {
+  const roster = Array.isArray(state.teamRosters?.[teamKey]) ? state.teamRosters[teamKey] : []
+  const needle = (name || '').trim().toLowerCase()
+  if (!needle) return null
+  return roster.find(p => ((p?.name || '').trim().toLowerCase() === needle)) || null
+}
+
+app.post('/api/role', (req, res) => {
+  const ctx = resolvePlayerOp(req)
+  if (ctx.error) return res.status(ctx.error).json({ error: ctx.message })
+  const state = getOpState(ctx.op.id)
+  const key = (req.body?.team || '').toString().toLowerCase()
+  const name = (req.body?.name || '').toString().trim()
+  if (!state.teams[key]) return res.status(404).json({ error: 'laget finns inte' })
+  if (!name) return res.status(400).json({ error: 'namn krävs' })
+  const entry = findRosterEntry(state, key, name)
+  if (!entry) {
+    return res.status(404).json({ error: 'namnet finns inte i det lagets laguppställning — kontrollera stavningen eller fråga spelledningen' })
+  }
+  const isSaboteur = entry.role === 'sabotor'
+  // Saboteurs get their own missions (targeting OTHER teams). Agents get
+  // nothing extra — not even a hint that missions exist.
+  const missions = isSaboteur
+    ? (state.sabotageMissions || [])
+        .filter(m => m && m.team === key)
+        .map(m => ({
+          id: m.id,
+          targetTeam: m.targetTeam,
+          targetTeamName: state.teams[m.targetTeam]?.name || (m.targetTeam || '').toUpperCase(),
+          text: m.text,
+          done: !!m.done,
+          doneAt: m.doneAt || null,
+        }))
+    : []
+  res.json({ role: isSaboteur ? 'sabotor' : 'agent', missions })
+})
+
+// Saboteur marks one of their own missions as completed. Logged for the
+// admin (results reveal) — no automatic penalties for the target team.
+app.post('/api/sabotage-done', (req, res) => {
+  const ctx = resolvePlayerOp(req)
+  if (ctx.error) return res.status(ctx.error).json({ error: ctx.message })
+  const state = getOpState(ctx.op.id)
+  const key = (req.body?.team || '').toString().toLowerCase()
+  const name = (req.body?.name || '').toString().trim()
+  const missionId = req.body?.missionId
+  if (!state.teams[key]) return res.status(404).json({ error: 'laget finns inte' })
+  const entry = findRosterEntry(state, key, name)
+  if (!entry || entry.role !== 'sabotor') {
+    return res.status(403).json({ error: 'endast lagets sabotör kan bekräfta sabotage-uppdrag' })
+  }
+  const idx = (state.sabotageMissions || []).findIndex(m => m && m.id === missionId && m.team === key)
+  if (idx === -1) return res.status(404).json({ error: 'uppdraget finns inte' })
+  const mission = state.sabotageMissions[idx]
+  if (mission.done) return res.json({ ok: true, deduped: true, doneAt: mission.doneAt })
+  const nextMissions = state.sabotageMissions.slice()
+  nextMissions[idx] = { ...mission, done: true, doneAt: Date.now() }
+  commitOp(ctx.op.id, { ...state, sabotageMissions: nextMissions })
+  res.json({ ok: true, doneAt: nextMissions[idx].doneAt })
+})
+
+// Fire a sabotage ability at another team's navigator device. Server
+// enforces: game mode only, saboteur identity (roster name + role), per-
+// ability charges (maxUses) and a global 10-min cooldown per saboteur. The
+// resulting effect is broadcast in the state blob; the victim client renders
+// it until expiresAt. Mischief only — arrival detection always uses the REAL
+// checkpoint coordinates, so no effect can permanently break progression.
+app.post('/api/sabotage-ability', (req, res) => {
+  const ctx = resolvePlayerOp(req)
+  if (ctx.error) return res.status(ctx.error).json({ error: ctx.message })
+  const state = getOpState(ctx.op.id)
+  if ((state.mode || 'game') === 'explore') {
+    return res.status(409).json({ error: 'sabotage är avstängt i utforskningsläget' })
+  }
+  const key = (req.body?.team || '').toString().toLowerCase()
+  const name = (req.body?.name || '').toString().trim()
+  const type = (req.body?.type || '').toString()
+  const targetKey = (req.body?.targetTeam || '').toString().toLowerCase()
+  if (!state.teams[key]) return res.status(404).json({ error: 'laget finns inte' })
+  if (!state.teams[targetKey]?.enabled) return res.status(404).json({ error: 'mållaget finns inte' })
+  if (targetKey === key) return res.status(400).json({ error: 'du kan inte sabotera ditt eget lag' })
+  const entry = findRosterEntry(state, key, name)
+  if (!entry || entry.role !== 'sabotor') {
+    return res.status(403).json({ error: 'endast lagets sabotör kan använda sabotage-förmågor' })
+  }
+  const ability = SABOTAGE_ABILITIES[type]
+  if (!ability) return res.status(400).json({ error: 'okänd förmåga' })
+
+  const log = Array.isArray(state.sabotageLog) ? state.sabotageLog : []
+  const usedOfType = log.filter(e => e.byTeam === key && e.type === type).length
+  if (usedOfType >= ability.maxUses) {
+    return res.status(409).json({ error: 'inga laddningar kvar för den förmågan' })
+  }
+  const now = Date.now()
+  const lastUseAt = log.reduce((max, e) => (e.byTeam === key && e.at > max ? e.at : max), 0)
+  if (lastUseAt && now - lastUseAt < SABOTAGE_COOLDOWN_MS) {
+    const waitMin = Math.ceil((lastUseAt + SABOTAGE_COOLDOWN_MS - now) / 60_000)
+    return res.status(429).json({
+      error: `nedkylning pågår — nästa sabotage möjligt om ca ${waitMin} min`,
+      cooldownUntil: lastUseAt + SABOTAGE_COOLDOWN_MS,
+    })
+  }
+
+  // Type-specific params, computed server-side so all clients agree.
+  let params = {}
+  if (type === 'fake-target') {
+    // Displace the victim's DISPLAYED target 300–800 m in a random direction.
+    // Stored as a lat/lng delta the client applies to its current checkpoint,
+    // so the effect stays sane even if the team advances mid-effect.
+    const meters = 300 + randomInt(501)
+    const bearing = (randomInt(360) * Math.PI) / 180
+    // Longitude scaling needs a latitude — use the victim's current
+    // checkpoint, else their last position, else the Öland default.
+    const victimCps = state.checkpoints.filter(cp => (cp.team || '').toLowerCase() === targetKey)
+    const cpIdx = Math.min(Number(state.teamProgress?.[targetKey]) || 0, Math.max(0, victimCps.length - 1))
+    const victimPath = state.history.find(h => h.team === targetKey)?.path
+    const refLat = victimCps[cpIdx]?.lat
+      ?? victimPath?.[victimPath.length - 1]?.lat
+      ?? 56.8
+    const dLat = (meters * Math.cos(bearing)) / 111_320
+    const dLng = (meters * Math.sin(bearing)) / (111_320 * Math.max(0.2, Math.cos((refLat * Math.PI) / 180)))
+    params = { dLat, dLng, meters }
+  } else if (type === 'fake-transmission') {
+    params = { message: FAKE_TRANSMISSION_MESSAGES[randomInt(FAKE_TRANSMISSION_MESSAGES.length)] }
+  }
+
+  const effect = {
+    id: `fx-${now}-${Math.random().toString(36).slice(2, 7)}`,
+    type,
+    targetTeam: targetKey,
+    byTeam: key,
+    params,
+    createdAt: now,
+    expiresAt: now + ability.durationMs,
+  }
+  // cost comes from the server-side catalog — never from the client.
+  const logEntry = { id: effect.id, type, byTeam: key, byName: entry.name, targetTeam: targetKey, at: now, cost: ability.cost }
+  const next = {
+    ...state,
+    sabotageEffects: [...(Array.isArray(state.sabotageEffects) ? state.sabotageEffects : []), effect],
+    sabotageLog: [...log, logEntry].slice(-200),
+  }
+  commitOp(ctx.op.id, next)
+  res.json({
+    ok: true,
+    effect: { id: effect.id, type, targetTeam: targetKey, expiresAt: effect.expiresAt },
+    chargesLeft: ability.maxUses - usedOfType - 1,
+    cooldownUntil: now + SABOTAGE_COOLDOWN_MS,
+    cost: ability.cost,
+  })
 })
 
 app.post('/api/arrival', (req, res) => {

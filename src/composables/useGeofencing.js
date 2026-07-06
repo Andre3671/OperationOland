@@ -1,7 +1,10 @@
 import { ref, onMounted, onUnmounted, watch, toValue } from 'vue'
 import { useSimulationStore, WALKING_RADIUS_M } from '../store/simulationStore'
 
-export function useGeofencing(checkpoints, activeIndex, teamNameSource) {
+// `enabledSource` (optional): when false the composable never starts GPS
+// tracking at all — used by member devices (no GPS binding, no permission
+// prompt) as opposed to the team's navigator device.
+export function useGeofencing(checkpoints, activeIndex, teamNameSource, enabledSource = true) {
   const isOverlayActive = ref(false)
   const userLocation = ref(null)
   const distanceToTarget = ref(null)
@@ -91,6 +94,7 @@ export function useGeofencing(checkpoints, activeIndex, teamNameSource) {
   }
 
   function startTracking() {
+    if (!toValue(enabledSource)) return
     if (!navigator.geolocation) {
       console.error('Geolocation is not supported by your browser')
       gpsError.value = 'unsupported'
@@ -191,6 +195,13 @@ export function useGeofencing(checkpoints, activeIndex, teamNameSource) {
   function handleVisibilityResume() {
     if (document.visibilityState === 'visible') restartTracking()
   }
+
+  // React to the enable flag flipping (e.g. the player switches this device
+  // from MEDLEM back to NAVIGATÖR without a reload).
+  watch(() => toValue(enabledSource), (enabled) => {
+    if (enabled) restartTracking()
+    else stopTracking()
+  })
 
   onMounted(() => {
     startTracking()

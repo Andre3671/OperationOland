@@ -31,6 +31,7 @@ export function computeTeamScore(team, state) {
     missionComplete: 0,
     meetingBonus: 0,
     cheatPenalty: 0,
+    sabotagePenalty: 0,
   }
 
   // Arrival + meeting bonus: one entry per cleared checkpoint in arrivalLog.
@@ -66,6 +67,13 @@ export function computeTeamScore(team, state) {
     cheat.offenses * SCORING.cheatOffense +
     Math.floor((cheat.seconds || 0) / 30) * SCORING.cheatPer30s
   )
+
+  // Sabotage cost: every ability the team's saboteur fired burned points
+  // from THIS team's total. The cost per use is recorded server-side on the
+  // sabotage log entry, so old operations without the field score 0.
+  breakdown.sabotagePenalty = -(state.sabotageLog || [])
+    .filter(e => e && e.byTeam === team)
+    .reduce((sum, e) => sum + (Number(e.cost) || 0), 0)
 
   // Scores never go below zero — cheating can eat the earned points but a
   // team should always see a plus score, not a growing minus.

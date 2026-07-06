@@ -43,10 +43,11 @@
         :center="initialCenter"
         :zoom="14"
         :visible="!isOverlayActive"
-        :checkpoints="checkpoints"
+        :checkpoints="displayCheckpoints"
         :activeIndex="activeIndex"
         :teamColor="teamColor"
         :team="teamName"
+        :ownPosition="isExplore ? userLocation : null"
       />
       <div v-else-if="teamReady && !initialCenter && !isOverlayActive" class="gps-wait">
         <div class="gps-wait-spinner"></div>
@@ -55,8 +56,9 @@
       <Compass
         v-if="teamReady && !isOverlayActive"
         :userLocation="userLocation"
-        :target="activeCheckpoint"
+        :target="displayTarget"
         :color="teamColor"
+        :jammed="compassJammed"
       />
     </main>
 
@@ -64,6 +66,59 @@
          admin's 6-char join code before anything else (briefing, sensors,
          team picker). A stored code skips the gate on re-open. -->
     <JoinGate v-if="!joined" @joined="onJoined" />
+
+    <!-- Device role gate: every participant runs the app on their OWN phone.
+         One phone per team is the NAVIGATÖR (GPS + game flow as before);
+         everyone else is MEDLEM (lightweight: role reveal / saboteur console,
+         no GPS binding, no anti-cheat). Persisted per device. -->
+    <div v-else-if="!deviceRole" class="device-gate">
+      <div class="device-frame">
+        <div class="corner top-left"></div>
+        <div class="corner top-right"></div>
+        <div class="corner bottom-left"></div>
+        <div class="corner bottom-right"></div>
+        <div class="device-gate-head">VÄLJ ENHETSROLL</div>
+        <p class="device-gate-sub">Vad ska den här mobilen användas till?</p>
+        <button class="device-option" @click="chooseDeviceRole('navigator')">
+          <span class="device-opt-icon">🧭</span>
+          <span class="device-opt-title">NAVIGATÖR</span>
+          <span class="device-opt-sub">Lagets spelenhet — GPS, karta, kompass och uppdrag. EN mobil per lag.</span>
+        </button>
+        <button class="device-option" @click="chooseDeviceRole('member')">
+          <span class="device-opt-icon">🎭</span>
+          <span class="device-opt-title">MEDLEM</span>
+          <span class="device-opt-sub">{{ isExplore ? 'Din egen mobil — följ med på färden.' : 'Din egen mobil — se din hemliga roll (agent eller sabotör).' }}</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Member device: no GPS, no anti-cheat, no team binding. -->
+    <template v-else-if="deviceRole === 'member'">
+      <div v-if="isExplore" class="holding-screen">
+        <div class="holding-frame">
+          <div class="corner top-left"></div>
+          <div class="corner top-right"></div>
+          <div class="corner bottom-left"></div>
+          <div class="corner bottom-right"></div>
+          <div class="holding-header">
+            <span class="system-status">ENHETSROLL: MEDLEM</span>
+            <div class="tactical-type">UPPTÄCKTSFÄRD</div>
+          </div>
+          <div class="holding-body">
+            <div class="alert-icon">🌿</div>
+            <h1 class="mission-status">MEDRESENÄR</h1>
+            <h2 class="mission-title">NJUT AV RESAN</h2>
+            <div class="mission-divider"></div>
+            <p class="mission-challenge">
+              Den här operationen körs i utforskningsläge — inga hemliga roller,
+              inga uppdrag. Navigatörens mobil sköter kartan och kompassen.
+              Luta dig tillbaka och njut av platserna längs vägen.
+            </p>
+          </div>
+        </div>
+      </div>
+      <RoleReveal v-else standalone />
+    </template>
 
     <div v-else-if="!isOperationActive && !teamReady" class="holding-screen">
       <div class="holding-frame">
@@ -99,7 +154,7 @@
       </div>
     </div>
 
-    <WelcomeScreen v-else-if="!teamReady && !welcomed" @accept="welcomed = true" />
+    <WelcomeScreen v-else-if="!teamReady && !welcomed" :mode="mode" @accept="welcomed = true" />
 
     <SensorPermissionGate
       v-else-if="!teamReady && !sensorsReady"
@@ -116,11 +171,31 @@
       ⇄ BYT OPERATION<span v-if="joinedOpName" class="switch-op-name"> ({{ joinedOpName }})</span>
     </button>
 
+    <!-- Device role escape hatch: wrong choice → back to the gate. -->
+    <button v-if="joined && deviceRole && !teamReady" class="switch-op-btn switch-role-btn" @click="switchDeviceRole">
+      ⇄ BYT ENHETSROLL ({{ deviceRole === 'member' ? 'MEDLEM' : 'NAVIGATÖR' }})
+    </button>
+
+    <!-- Discreet role peek for the navigator device (game mode, before the
+         team is bound) — members have their own permanent role screen. -->
+    <button
+      v-if="joined && deviceRole === 'navigator' && !teamReady && !isExplore"
+      class="switch-op-btn peek-role-btn"
+      @click="roleOpen = true"
+    >
+      🎭 DIN ROLL
+    </button>
+    <RoleReveal v-if="roleOpen" @close="roleOpen = false" />
+
     <!-- Quick app tutorial: auto-shows once (localStorage) the first time the
          game UI appears, and can be reopened via the "?" button in the header. -->
-    <AppTutorial v-if="teamReady && tutorialOpen" @close="closeTutorial" />
+    <AppTutorial v-if="teamReady && tutorialOpen" :mode="mode" @close="closeTutorial" />
 
-    <RedLockOverlay v-if="locked" :seconds="penaltySeconds" :stats="currentCheatingStats" />
+    <!-- Anti-cheat lock: game mode only — explore has no anti-cheat at all. -->
+    <RedLockOverlay v-if="locked && !isExplore" :seconds="penaltySeconds" :stats="currentCheatingStats" />
+
+    <!-- Sabotage effects targeting THIS team's navigator (game mode). -->
+    <SabotageFx v-if="teamReady && !isExplore" :effects="activeSabotage" :notice="sabNotice" />
 
     <div v-if="teamReady && chatOpen" class="team-chat-panel">
       <div class="team-chat-head">
@@ -148,11 +223,16 @@
       :active="isOverlayActive"
       :checkpoint="activeCheckpoint"
       :team="teamName"
+      :mode="mode"
       @unlock="completeMission"
     />
 
     <!-- Mission HUD -->
     <div v-if="teamReady" class="sim-debug-panel">
+      <div class="debug-row" v-if="isExplore">
+        <span class="debug-label">LÄGE:</span>
+        <span class="debug-value" style="color: #00ccff;">UTFORSKNING</span>
+      </div>
       <div class="debug-row">
         <span class="debug-label">TARGET:</span>
         <span class="debug-value">

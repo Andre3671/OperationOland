@@ -87,6 +87,27 @@ body{
   100%{transform:scale(1.6);opacity:0}
 }
 
+/* Explore mode: the team's own live position (pulsing dot in team color) */
+.own-pos-marker{
+  position:relative;
+  width:26px;height:26px;
+  display:flex;align-items:center;justify-content:center;
+}
+.own-pos-pulse{
+  position:absolute;inset:0;border-radius:50%;
+  background:var(--own-color, #00ccff);
+  opacity:0.4;
+  animation:nextCheckpointPulse 1.8s ease-out infinite;
+  pointer-events:none;
+}
+.own-pos-dot{
+  position:relative;
+  width:14px;height:14px;border-radius:50%;
+  background:var(--own-color, #00ccff);
+  border:3px solid #fff;
+  box-shadow:0 0 10px var(--own-color, #00ccff);
+}
+
 /* Navigator: manual pins (tap to place, long-press to remove) */
 .manual-pin{
   width:24px;height:24px;

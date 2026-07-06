@@ -50,10 +50,16 @@
 <script setup>
 import { ref, computed } from 'vue'
 
+const props = defineProps({
+  // 'game' (default) or 'explore' — explore swaps the map/anti-cheat steps
+  // for relaxed variants (own position visible, no penalties).
+  mode: { type: String, default: 'game' },
+})
+
 const emit = defineEmits(['close'])
 
 // Each step describes one real UI element in HomeView's game screen.
-const steps = [
+const gameSteps = [
   {
     icon: '🧭',
     title: 'KOMPASSEN',
@@ -82,6 +88,33 @@ const steps = [
     hint: 'Tryck på ?-knappen i sidhuvudet för att se den här guiden igen.',
   },
 ]
+
+const exploreSteps = [
+  gameSteps[0],
+  {
+    icon: '🎯',
+    title: 'NÄSTA PLATS & AVSTÅND',
+    text: 'Panelen nere till vänster visar nästa plats och avståndet dit. Avståndet räknas ner när ni närmar er.',
+  },
+  {
+    icon: '🗺️',
+    title: 'KARTAN',
+    text: 'I utforskningsläget visar kartan er egen position live. Tryck på kartan för att fälla en egen nål (håll inne nålen för att ta bort den). Knappen i kartans hörn byter kartlager, t.ex. satellit.',
+  },
+  {
+    icon: '✨',
+    title: 'STOPP LÄNGS VÄGEN',
+    text: 'När ni når en plats öppnas ett infokort om vad som finns där. Titta er omkring, ta gärna en minnesbild med kameraknappen och tryck FORTSÄTT när ni är redo för nästa stopp.',
+  },
+  {
+    icon: '🌿',
+    title: 'INGA REGLER — BARA RES',
+    text: 'Inget fusk-system, inga straff. Bilder är frivilliga semesterbilder, inte bevis. Använd mobilen fritt. Behöver ni hjälp? Använd CHAT-knappen uppe till höger för att nå spelledningen.',
+    hint: 'Tryck på ?-knappen i sidhuvudet för att se den här guiden igen.',
+  },
+]
+
+const steps = computed(() => (props.mode === 'explore' ? exploreSteps : gameSteps))
 
 const index = ref(0)
 const step = computed(() => steps[index.value])

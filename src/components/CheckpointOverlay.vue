@@ -10,12 +10,46 @@
 
         <!-- Header -->
         <div class="modal-header">
-          <span class="system-status">LINK-STATE: ESTABLISHED</span>
-          <div class="tactical-type">{{ checkpoint.type === 'task' ? 'FIELD MISSION' : 'STAGING POINT' }}</div>
+          <span class="system-status">{{ isExplore ? 'UPPTÄCKTSFÄRD' : 'LINK-STATE: ESTABLISHED' }}</span>
+          <div class="tactical-type">{{ isExplore ? 'SEVÄRDHET' : (checkpoint.type === 'task' ? 'FIELD MISSION' : 'STAGING POINT') }}</div>
+        </div>
+
+        <!-- Explore Layout: informational stop — no photo, no hold, no gating -->
+        <div v-if="isExplore && (checkpoint.type === 'task' || checkpoint.type === 'meeting')" class="layout-body">
+          <div class="alert-icon">✨</div>
+          <h1 class="mission-status">NI ÄR FRAMME</h1>
+          <h2 class="mission-title">{{ checkpoint.type === 'meeting' ? 'ÅTERSAMLING' : taskName }}</h2>
+          <div v-if="cityLine" class="mission-city">{{ cityLine }}</div>
+          <div v-if="checkpoint.region" class="mission-region">{{ checkpoint.region }}</div>
+          <div class="mission-divider"></div>
+          <p class="mission-challenge">{{ checkpoint.challenge }}</p>
+          <div class="explore-note">
+            Här finns något coolt — kliv ur, titta er omkring och njut av platsen.
+            Ta gärna en bild för minnet — men inga krav, ingen tidspress.
+            Fortsätt mot nästa stopp när ni känner er redo.
+          </div>
+
+          <div class="photo-row">
+            <button class="action-btn photo-btn" @click="triggerPhotoPicker" :disabled="photoUploading">
+              {{ photoUploading ? 'LADDAR UPP…' : photoUploaded ? '✓ BILD SPARAD — TA OM' : '📷 TA EN MINNESBILD' }}
+            </button>
+            <input
+              ref="photoInputRef"
+              type="file"
+              accept="image/*"
+              capture="environment"
+              class="photo-input"
+              @change="handlePhotoSelected"
+            />
+            <img v-if="photoPreview" :src="photoPreview" class="photo-preview" />
+            <div v-if="photoError" class="photo-error">{{ photoError }}</div>
+          </div>
+
+          <button class="action-btn task-btn" @click="handleUnlock">FORTSÄTT →</button>
         </div>
 
         <!-- Start Layout -->
-        <div v-if="checkpoint.type === 'start'" class="layout-body">
+        <div v-else-if="checkpoint.type === 'start'" class="layout-body">
           <div class="alert-icon">🚩</div>
           <h1 class="mission-status">UPPSAMLAD VID START</h1>
           <h2 class="mission-title">{{ taskName }}</h2>
@@ -41,7 +75,7 @@
           </div>
 
           <button class="action-btn task-btn" @click="handleUnlock">
-            [STARTA OPERATIONEN]
+            [STARTA {{ isExplore ? 'FÄRDEN' : 'OPERATIONEN' }}]
           </button>
         </div>
 
@@ -71,7 +105,10 @@
             <div v-if="photoError" class="photo-error">{{ photoError }}</div>
           </div>
 
-          <div class="status-message" style="margin-top: 20px;">
+          <div v-if="isExplore" class="explore-note">
+            Ni har nått slutmålet — bra jobbat! Samla laget och fira.
+          </div>
+          <div v-else class="status-message" style="margin-top: 20px;">
             <span class="blink">●</span> AVVAKTAR SPELLEDNING...
           </div>
         </div>
@@ -192,6 +229,10 @@ const props = defineProps({
   checkpoint: { type: Object, required: true },
   active: { type: Boolean, default: false },
   team: { type: String, default: '' },
+  // 'game' (default) or 'explore'. Explore turns every stop into an
+  // informational "här finns något coolt" screen: no photo proof, no
+  // hold-to-confirm — just a FORTSÄTT button.
+  mode: { type: String, default: 'game' },
 })
 
 const emit = defineEmits(['unlock'])
@@ -228,7 +269,10 @@ const arriveClock = computed(() => {
   return d.toLocaleTimeString('sv-SE', { hour: '2-digit', minute: '2-digit' })
 })
 
+const isExplore = computed(() => props.mode === 'explore')
+
 const overlayTheme = computed(() => {
+  if (isExplore.value) return 'theme-cyan'
   const t = props.checkpoint.type
   if (t === 'start') return 'theme-cyan'
   if (t === 'finish') return 'theme-red'
@@ -239,9 +283,9 @@ const overlayTheme = computed(() => {
 // Every checkpoint the team advances past (task missions and meeting/regroup
 // points) requires photo proof before the hold-to-confirm will fire — no
 // hold-to-skip without submitting evidence. Start (kickoff) and finish (no
-// advance) are excluded.
+// advance) are excluded. Explore mode never requires photos.
 const photoRequired = computed(() =>
-  props.checkpoint.type === 'task' || props.checkpoint.type === 'meeting'
+  !isExplore.value && (props.checkpoint.type === 'task' || props.checkpoint.type === 'meeting')
 )
 const photoGateBlocking = computed(() => photoRequired.value && !photoUploaded.value)
 
@@ -605,6 +649,19 @@ onUnmounted(() => {
   color: #eee;
   font-size: 0.95rem;
   line-height: 1.5;
+}
+
+/* Explore mode: relaxed info box instead of mission gating. */
+.explore-note {
+  background: rgba(0, 204, 255, 0.07);
+  border: 1px dashed rgba(0, 204, 255, 0.35);
+  color: #cfeefb;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 16px;
+  margin-bottom: 20px;
+  font-size: 0.88rem;
+  line-height: 1.55;
 }
 
 .photo-row {

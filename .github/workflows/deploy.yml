@@ -48,11 +48,15 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Stop existing containers
+        timeout-minutes: 2
         run: |
-          docker stop "$SPA_CONTAINER"  2>/dev/null || true
-          docker rm   "$SPA_CONTAINER"  2>/dev/null || true
-          docker stop "$SYNC_CONTAINER" 2>/dev/null || true
-          docker rm   "$SYNC_CONTAINER" 2>/dev/null || true
+          # docker stop/rm can block for minutes if the daemon or the
+          # container's shim is wedged (seen on this host when the container
+          # was already stopped), so cap every call and fall back to rm -f.
+          for c in "$SPA_CONTAINER" "$SYNC_CONTAINER"; do
+            timeout 30 docker stop -t 10 "$c" 2>/dev/null || true
+            timeout 30 docker rm -f "$c"      2>/dev/null || true
+          done
 
       - name: Ensure sync data volume exists
         run: docker volume inspect "$SYNC_VOLUME" >/dev/null 2>&1 || docker volume create "$SYNC_VOLUME"

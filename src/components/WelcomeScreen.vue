@@ -8,7 +8,7 @@
 
       <div class="signal-status">
         <span class="signal-dot"></span>
-        INKOMMANDE SÄNDNING
+        {{ isExplore ? 'INKOMMANDE FÄRDPLAN' : 'INKOMMANDE SÄNDNING' }}
       </div>
 
       <div class="mission-codename">
@@ -16,7 +16,16 @@
         <span class="cn-name typewriter">ROADTRIP</span>
       </div>
 
-      <div class="briefing">
+      <div v-if="isExplore" class="briefing">
+        <p class="briefing-intro">Upptäcktsfärd. Ta det lugnt och njut av resan.</p>
+        <ul>
+          <li>Rutten leder er mellan platser som är värda ett stopp.</li>
+          <li>Kompassen pekar mot nästa plats — och er egen position syns på kartan.</li>
+          <li>Inga uppdrag, inga straff. Ta gärna bilder för minnet — men inga krav.</li>
+          <li>Tryck FORTSÄTT vid varje stopp när ni är redo för nästa.</li>
+        </ul>
+      </div>
+      <div v-else class="briefing">
         <p class="briefing-intro">Klassificerad uppdragsbriefing. Läs noggrant.</p>
         <ul>
           <li>Ert lag rör sig mot strategiska mål i sektor Öland.</li>
@@ -30,12 +39,12 @@
 
       <div class="frequency-readout">
         <span>FREQ.142.6 MHz</span>
-        <span>NIVÅ: HEMLIG</span>
+        <span>{{ isExplore ? 'NIVÅ: AVSLAPPNAD' : 'NIVÅ: HEMLIG' }}</span>
         <span>{{ stamp }}</span>
       </div>
 
       <button class="accept-btn" @click="onAccept">
-        ACCEPTERA UPPDRAG
+        {{ isExplore ? 'PÅBÖRJA FÄRDEN' : 'ACCEPTERA UPPDRAG' }}
       </button>
     </div>
   </div>
@@ -43,6 +52,14 @@
 
 <script setup>
 import { computed } from 'vue'
+
+const props = defineProps({
+  // 'game' (default) or 'explore' — explore swaps the classified mission
+  // briefing for a relaxed sightseeing intro.
+  mode: { type: String, default: 'game' },
+})
+
+const isExplore = computed(() => props.mode === 'explore')
 
 const emit = defineEmits(['accept'])
 

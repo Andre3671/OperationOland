@@ -19,15 +19,45 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
+import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue'
 
 const props = defineProps({
   userLocation: { type: Object, default: null }, // { lat, lng } — the live GPS fix
   target: { type: Object, default: null },       // { lat, lng } — current checkpoint
   color: { type: String, default: '#ffcc00' },
+  // Sabotage effect KOMPASSTÖRNING: while true the displayed heading spins/
+  // wobbles randomly. Real sensor readings keep flowing underneath, so the
+  // needle recovers the instant the effect expires.
+  jammed: { type: Boolean, default: false },
 })
 
 const heading = ref(0)
+
+// ---- compass jam (sabotage) ----
+// Random-walk offset added on top of the real heading. Velocity drifts each
+// tick so the needle alternates between slow wobble and wild spinning.
+const jamOffset = ref(0)
+let jamTimer = null
+let jamVelocity = 0
+
+watch(() => props.jammed, (isJammed) => {
+  if (isJammed && !jamTimer) {
+    jamVelocity = 25
+    jamTimer = setInterval(() => {
+      jamVelocity += (Math.random() - 0.5) * 30
+      jamVelocity = Math.max(-70, Math.min(70, jamVelocity))
+      jamOffset.value = (jamOffset.value + jamVelocity) % 360
+    }, 120)
+  } else if (!isJammed && jamTimer) {
+    clearInterval(jamTimer)
+    jamTimer = null
+    jamOffset.value = 0
+  }
+}, { immediate: true })
+
+const effectiveHeading = computed(() =>
+  props.jammed ? (heading.value + jamOffset.value + 360) % 360 : heading.value
+)
 const unsupported = ref(false)
 const hasReading = ref(false)
 let absoluteListener = null
@@ -72,11 +102,11 @@ const debugLine = computed(() => {
   return parts.join(' ')
 })
 
-const rotationStyle = computed(() => ({ transform: `rotate(${-heading.value}deg)` }))
+const rotationStyle = computed(() => ({ transform: `rotate(${-effectiveHeading.value}deg)` }))
 const headingLabel = computed(() => {
   if (unsupported.value) return 'KOMPASS STÖDS EJ'
   if (!hasReading.value) return 'KOMPASS…'
-  const deg = Math.round(heading.value)
+  const deg = Math.round(effectiveHeading.value)
   return `N ${deg}°`
 })
 
@@ -106,7 +136,7 @@ const showTargetTick = computed(() => targetBearing.value != null)
 // regardless of which way the phone is facing.
 const targetPointerStyle = computed(() => {
   if (targetBearing.value == null) return {}
-  const rot = (targetBearing.value - heading.value + 360) % 360
+  const rot = (targetBearing.value - effectiveHeading.value + 360) % 360
   return {
     transform: `rotate(${rot}deg)`,
     '--target-color': props.color,
@@ -237,6 +267,7 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
+  if (jamTimer) { clearInterval(jamTimer); jamTimer = null }
   if (absoluteListener) window.removeEventListener('deviceorientationabsolute', absoluteListener, true)
   if (fallbackListener) window.removeEventListener('deviceorientation', fallbackListener, true)
   if (sensor) {

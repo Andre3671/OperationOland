@@ -39,7 +39,8 @@
       "Bash(cd \"C:\\\\Users\\\\babyb\\\\Desktop\\\\Projekt\\\\OperationOland\" && git log --oneline -3 && git status --short | head -5; docker ps --filter name=oo-sync-smoke --format '{{.Names}} {{.Status}}'; ls /tmp/oo_tok /tmp/oo_code /tmp/oo_opid 2>/dev/null)",
       "Read(//tmp/**)",
       "Bash(docker rmi *)",
-      "Bash(npm run *)"
+      "Bash(npm run *)",
+      "Bash(node --check \"c:\\\\Users\\\\babyb\\\\Desktop\\\\Projekt\\\\OperationOland\\\\server\\\\src\\\\index.js\")"
     ]
   }
 }

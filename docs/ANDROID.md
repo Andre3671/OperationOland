@@ -66,6 +66,18 @@ igenom Capacitor-origins (`https://localhost`, `capacitor://localhost`,
 `X-Admin-Token`. **Servern måste vara omdeployad (`npm run deploy`) innan
 appen kan prata med den.** WebSocketen (`/api/sync`) berörs inte av CORS.
 
+## Anslutningskod (spelarens första skärm)
+
+Appens flöde börjar numera med **"ANGE ANSLUTNINGSKOD"**: spelaren anger
+den 6-teckenskod som spelledningen delar ut (visas i admin-panelen).
+Koden valideras mot `POST /api/join` och avgör vilken spelledares
+live-operation spelaren hamnar i — flera operationer kan vara live
+samtidigt hos olika spelledare. Koden sparas i localStorage
+(`oo-join-code`) så omstarter hoppar direkt in; "⇄ BYT OPERATION" rensar
+den. En delad länk med `?code=XXXXXX` förifyller koden. Alla API-anrop
+och WebSocketen (`/api/sync?code=...`) skickar koden automatiskt.
+Detaljer: se `docs/ACCOUNTS.md`. **Kräver omdeployad server.**
+
 ## Behörigheter
 
 `android/app/src/main/AndroidManifest.xml`:

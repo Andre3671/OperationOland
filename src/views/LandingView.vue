@@ -37,13 +37,22 @@
         </a>
       </section>
 
+      <section class="admin-section">
+        <h2 class="section-title">// SPELLEDNING</h2>
+        <p class="download-text">
+          Planera en egen operation: skapa ett konto, bygg rutten och dela
+          anslutningskoden med dina lag.
+        </p>
+        <router-link class="download-btn admin-btn" to="/admin">
+          REGISTRERA / LOGGA IN
+        </router-link>
+      </section>
+
       <div class="frequency-readout">
         <span>FREQ.142.6 MHz</span>
         <span>NIVÅ: HEMLIG</span>
         <span>{{ stamp }}</span>
       </div>
-
-      <router-link class="admin-link" to="/admin">ledningscentral ›</router-link>
     </div>
   </div>
 </template>
@@ -242,14 +251,9 @@ const stamp = computed(() => {
   font-variant-numeric: tabular-nums;
 }
 
-.admin-link {
-  display: inline-block;
-  font-size: 0.65rem;
-  letter-spacing: 0.14em;
-  color: #3a3a3a;
-  text-decoration: none;
-  transition: color 0.2s;
+.admin-btn {
+  border-color: rgba(0, 204, 255, 0.55);
+  padding: 12px;
+  font-size: 0.8rem;
 }
-
-.admin-link:hover { color: #00ccff; }
 </style>

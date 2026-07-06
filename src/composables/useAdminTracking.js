@@ -270,6 +270,10 @@ export function useAdminTracking() {
     configureSlots,
     releaseSlot,
     teamRosters,
+    mode,
+    sabotageMissions,
+    sabotageEffects,
+    sabotageLog,
     operationsList,
     activeOperationId,
     createOperation,
@@ -1189,5 +1193,5 @@ export function useAdminTracking() {
     if (intervalId) { clearInterval(intervalId); intervalId = null }
   })
 
-  return { activeIdealRoutes, actualRoutes, livePoints, teamSummaries, isLoading, genProgress, error, refresh, debugMode: isSimulationMode, debugPositions, toggleDebug, toggleOperation, updateTeamPosition, snapToIdeal, moveTeamCheckpoint, checkpoints, meetingPoint, globalStart, globalFinish, updateGlobalStart, updateGlobalFinish, setStartByName, setFinishByName, moveStartTo, moveFinishTo, removeCheckpoint, updateCheckpoint, updateMeetingPoint, generateRoutes, avoidHighways, isSimulationMode, isOperationActive, walkingMode, toggleWalkingMode, operationStartTime, meetingPointTime, teamProgress, teams, teamCheating, arrivalLog, chatMessages, sendChatMessage, releaseSlot, resetAll, configureSlots, teamRosters, operationsList, activeOperationId, createOperation, activateOperation, renameOperation, deleteOperation }
+  return { activeIdealRoutes, actualRoutes, livePoints, teamSummaries, isLoading, genProgress, error, refresh, debugMode: isSimulationMode, debugPositions, toggleDebug, toggleOperation, updateTeamPosition, snapToIdeal, moveTeamCheckpoint, checkpoints, meetingPoint, globalStart, globalFinish, updateGlobalStart, updateGlobalFinish, setStartByName, setFinishByName, moveStartTo, moveFinishTo, removeCheckpoint, updateCheckpoint, updateMeetingPoint, generateRoutes, avoidHighways, isSimulationMode, isOperationActive, walkingMode, toggleWalkingMode, operationStartTime, meetingPointTime, teamProgress, teams, teamCheating, arrivalLog, chatMessages, sendChatMessage, releaseSlot, resetAll, configureSlots, teamRosters, mode, sabotageMissions, sabotageEffects, sabotageLog, operationsList, activeOperationId, createOperation, activateOperation, renameOperation, deleteOperation }
 }

@@ -48,6 +48,10 @@
               <span class="stat-label">Fusk</span>
               <span class="stat-value stat-cheat">{{ row.cheatOffenses }}</span>
             </div>
+            <div class="stat" v-if="row.breakdown?.sabotagePenalty">
+              <span class="stat-label">Sabotage</span>
+              <span class="stat-value stat-cheat">{{ row.breakdown.sabotagePenalty }} p</span>
+            </div>
           </div>
         </div>
 
@@ -83,6 +87,43 @@
           </div>
         </div>
       </div>
+
+      <!-- STORA AVSLÖJANDET: who was each team's saboteur, what they fired
+           at whom (with timestamps and point costs) and which text missions
+           they completed. Game mode only. -->
+      <div v-if="showReveal" class="reveal-panel">
+        <div class="reveal-title">🎭 STORA AVSLÖJANDET</div>
+        <div class="reveal-sub">Sabotörerna och allt de gjorde — visa denna för alla lag samtidigt.</div>
+
+        <div v-for="row in revealRows" :key="row.team" class="reveal-team" :style="{ '--team-color': row.color }">
+          <div class="reveal-team-head">
+            <span class="team-swatch" :style="{ background: row.color }"></span>
+            <span class="reveal-team-name">{{ row.displayName }}</span>
+            <span v-if="row.saboteur" class="reveal-sab-name">SABOTÖR: {{ row.saboteur }} 🕶️</span>
+            <span v-else class="reveal-no-sab">ingen sabotör</span>
+            <span v-if="row.totalCost" class="reveal-cost">−{{ row.totalCost }} p i sabotagekostnad</span>
+          </div>
+
+          <div v-if="row.abilityUses.length" class="reveal-list">
+            <div v-for="e in row.abilityUses" :key="e.id" class="reveal-row">
+              <span class="reveal-time">{{ formatClock(e.at) }}</span>
+              <span class="reveal-what">⚡ {{ abilityLabel(e.type) }} → <b>{{ teamDisplay(e.targetTeam) }}</b></span>
+              <span class="reveal-row-cost">−{{ e.cost || 0 }} p</span>
+            </div>
+          </div>
+
+          <div v-if="row.missions.length" class="reveal-list">
+            <div v-for="m in row.missions" :key="m.id" class="reveal-row" :class="{ 'is-pending': !m.done }">
+              <span class="reveal-time">{{ m.done ? formatClock(m.doneAt) : '—' }}</span>
+              <span class="reveal-what">{{ m.done ? '✓' : '○' }} uppdrag mot <b>{{ teamDisplay(m.targetTeam) }}</b>: {{ m.text }}</span>
+            </div>
+          </div>
+
+          <div v-if="!row.abilityUses.length && !row.missions.length" class="reveal-quiet">
+            {{ row.saboteur ? 'Sabotören låg lågt hela resan…' : 'Inget att avslöja.' }}
+          </div>
+        </div>
+      </div>
     </main>
   </div>
 </template>
@@ -102,6 +143,10 @@ const {
   idealRoadPaths,
   operationStartTime,
   teamStartTimes,
+  teamRosters,
+  sabotageMissions,
+  sabotageLog,
+  mode,
 } = useSimulationStore()
 
 const assignedTeams = computed(() => {
@@ -116,6 +161,7 @@ const leaderboard = computed(() => computeLeaderboard({
   teamProgress: teamProgress.value,
   teamCheating: teamCheating.value,
   arrivalLog: arrivalLog.value,
+  sabotageLog: sabotageLog.value,
 }))
 
 function haversineKm(a, b) {
@@ -242,6 +288,37 @@ const teamRows = computed(() => {
 
 const totalArrivals = computed(() => arrivalLog.value.length)
 const totalPhotos = computed(() => arrivalLog.value.filter(hasPhoto).length)
+
+// ---- STORA AVSLÖJANDET (game mode) ----
+
+import { ABILITY_LABELS } from '../lib/sabotageAbilities'
+
+const abilityLabel = (type) => ABILITY_LABELS[type] || type
+const teamDisplay = (key) => teams.value[key]?.name || (key || '').toUpperCase()
+
+const revealRows = computed(() =>
+  assignedTeams.value.map(({ key, name, color }) => {
+    const saboteur = (teamRosters.value[key] || []).find(p => p?.role === 'sabotor')?.name || ''
+    const abilityUses = (sabotageLog.value || [])
+      .filter(e => e && e.byTeam === key)
+      .sort((a, b) => a.at - b.at)
+    const missions = (sabotageMissions.value || []).filter(m => m && m.team === key)
+    return {
+      team: key,
+      displayName: name || key.toUpperCase(),
+      color: color || '#888',
+      saboteur,
+      abilityUses,
+      missions,
+      totalCost: abilityUses.reduce((sum, e) => sum + (Number(e.cost) || 0), 0),
+    }
+  })
+)
+
+const showReveal = computed(() =>
+  mode.value === 'game' &&
+  revealRows.value.some(r => r.saboteur || r.abilityUses.length || r.missions.length)
+)
 </script>
 
 <style scoped>
@@ -509,6 +586,110 @@ const totalPhotos = computed(() => arrivalLog.value.filter(hasPhoto).length)
 .cp-no-photo {
   font-size: 0.7rem;
   color: #555;
+  font-style: italic;
+}
+
+/* ---- STORA AVSLÖJANDET ---- */
+
+.reveal-panel {
+  border: 1px solid rgba(255, 85, 102, 0.4);
+  border-left: 4px solid #ff5566;
+  background: rgba(255, 85, 102, 0.04);
+  padding: 20px 18px;
+}
+
+.reveal-title {
+  font-size: 1.3rem;
+  font-weight: 900;
+  letter-spacing: 0.14em;
+  color: #ff5566;
+  text-shadow: 0 0 14px rgba(255, 85, 102, 0.4);
+  margin-bottom: 4px;
+}
+
+.reveal-sub {
+  color: #888;
+  font-size: 0.75rem;
+  margin-bottom: 18px;
+}
+
+.reveal-team {
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-left: 3px solid var(--team-color);
+  background: rgba(0, 0, 0, 0.35);
+  padding: 12px 14px;
+  margin-bottom: 12px;
+}
+
+.reveal-team-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+
+.reveal-team-name {
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  color: var(--team-color);
+  text-transform: uppercase;
+}
+
+.reveal-sab-name {
+  color: #ff8896;
+  font-weight: 800;
+  font-size: 0.78rem;
+  letter-spacing: 0.06em;
+}
+
+.reveal-no-sab {
+  color: #666;
+  font-size: 0.72rem;
+  font-style: italic;
+}
+
+.reveal-cost {
+  margin-left: auto;
+  color: #ffcc00;
+  font-size: 0.72rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.reveal-list { margin-bottom: 4px; }
+
+.reveal-row {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+  font-size: 0.76rem;
+  line-height: 1.5;
+  color: #ddd;
+  padding: 3px 0;
+}
+
+.reveal-row.is-pending { opacity: 0.55; }
+
+.reveal-time {
+  flex: 0 0 44px;
+  color: #888;
+  font-variant-numeric: tabular-nums;
+  font-size: 0.7rem;
+}
+
+.reveal-what { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+
+.reveal-row-cost {
+  color: #ffcc00;
+  font-size: 0.7rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.reveal-quiet {
+  color: #666;
+  font-size: 0.74rem;
   font-style: italic;
 }
 </style>

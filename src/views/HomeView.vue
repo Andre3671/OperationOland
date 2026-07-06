@@ -261,6 +261,8 @@ import WelcomeScreen from '../components/WelcomeScreen.vue'
 import SensorPermissionGate from '../components/SensorPermissionGate.vue'
 import JoinGate from '../components/JoinGate.vue'
 import AppTutorial from '../components/AppTutorial.vue'
+import RoleReveal from '../components/RoleReveal.vue'
+import SabotageFx from '../components/SabotageFx.vue'
 import { useAntiCheat } from '../composables/useAntiCheat'
 import { useTeamCheckpoints } from '../composables/useTeamCheckpoints'
 import { useGeofencing } from '../composables/useGeofencing'
@@ -274,7 +276,38 @@ import { colorForTeam } from '../lib/teamSlots'
 const teamRef = ref(null)
 const teamName = computed(() => teamRef.value?.toLowerCase() || '')
 
-const { getTeamPosition, updateTeamPosition, recordTeamStart, isSimulationMode, isOperationActive, walkingMode, teams, setTeamActive, teamCheating, chatMessages, sendChatMessage, claimSlot, claimSlotKey, connectionStatus } = useSimulationStore()
+const { getTeamPosition, updateTeamPosition, recordTeamStart, isSimulationMode, isOperationActive, walkingMode, teams, setTeamActive, teamCheating, chatMessages, sendChatMessage, claimSlot, claimSlotKey, connectionStatus, mode, sabotageEffects } = useSimulationStore()
+
+// Per-operation play mode. Explore = relaxed sightseeing: no anti-cheat, own
+// position on the map, info stops instead of gated missions.
+const isExplore = computed(() => mode.value === 'explore')
+
+// ---- device role (per phone) ----
+//
+// Every participant runs the app on their own phone. One phone per team is
+// the NAVIGATÖR (GPS + full game flow); the rest are MEDLEM devices (role
+// reveal / saboteur console — no GPS binding, no anti-cheat). A device with
+// ?team= in the URL is an already-bound navigator from before this feature,
+// so it defaults to navigator instead of bouncing to the gate mid-game.
+const DEVICE_ROLE_KEY = 'oo-device-role'
+const deviceRole = ref((() => {
+  try {
+    const stored = localStorage.getItem(DEVICE_ROLE_KEY)
+    if (stored === 'navigator' || stored === 'member') return stored
+  } catch (_) {}
+  if (new URLSearchParams(window.location.search).get('team')) return 'navigator'
+  return ''
+})())
+
+function chooseDeviceRole(role) {
+  deviceRole.value = role
+  try { localStorage.setItem(DEVICE_ROLE_KEY, role) } catch (_) { /* per-session only */ }
+}
+
+function switchDeviceRole() {
+  deviceRole.value = ''
+  try { localStorage.removeItem(DEVICE_ROLE_KEY) } catch (_) {}
+}
 
 const currentCheatingStats = computed(() => {
   if (!teamName.value) return { offenses: 0, seconds: 0 }
@@ -361,14 +394,83 @@ watch(teams, () => {
   restoreTeamFromUrl()
 }, { deep: true })
 
-// Geofencing Logic - passing reactive sources
-const { isOverlayActive, userLocation, distanceToTarget, gpsError, resetGeofence } = useGeofencing(checkpoints, activeIndex, teamName)
+// Geofencing Logic - passing reactive sources. Member devices never start
+// GPS at all (no permission prompt, no position broadcast).
+const { isOverlayActive, userLocation, distanceToTarget, gpsError, resetGeofence } = useGeofencing(
+  checkpoints,
+  activeIndex,
+  teamName,
+  computed(() => deviceRole.value !== 'member')
+)
 
 // Disable cheat detection while the player is at a checkpoint — they need to
 // open the camera to upload photos, read the brief, etc. without being
-// penalised for backgrounding the app.
-const isAntiCheatDisabled = computed(() => activeCheckpoint.value?.type === 'meeting' || isOverlayActive.value)
+// penalised for backgrounding the app. Explore mode and member devices have
+// no anti-cheat at all.
+const isAntiCheatDisabled = computed(() =>
+  isExplore.value ||
+  deviceRole.value === 'member' ||
+  activeCheckpoint.value?.type === 'meeting' ||
+  isOverlayActive.value
+)
 const { locked, penaltySeconds } = useAntiCheat(teamName, isAntiCheatDisabled)
+
+// ---- sabotage effects targeting THIS team (game mode, navigator) ----
+
+// 1 s tick so effect expiry is reactive without waiting for a server commit.
+const nowTick = ref(Date.now())
+let sabTickTimer = null
+
+const activeSabotage = computed(() => {
+  if (!teamName.value || isExplore.value) return []
+  return (sabotageEffects.value || []).filter(e =>
+    e && e.targetTeam === teamName.value && Number(e.expiresAt) > nowTick.value
+  )
+})
+
+const fakeTargetFx = computed(() => activeSabotage.value.find(e => e.type === 'fake-target') || null)
+const compassJammed = computed(() => activeSabotage.value.some(e => e.type === 'compass-jam'))
+
+// FLYTTA MÅL: what the navigator SEES (compass, HUD distance, map pin) is the
+// displaced point — arrival detection in useGeofencing keeps using the real
+// checkpoints, so the game can't get stuck.
+const displayTarget = computed(() => {
+  const cp = activeCheckpoint.value
+  if (!cp) return null
+  const fx = fakeTargetFx.value
+  if (!fx || !Number.isFinite(cp.lat) || !Number.isFinite(cp.lng)) return cp
+  return {
+    ...cp,
+    lat: cp.lat + (Number(fx.params?.dLat) || 0),
+    lng: cp.lng + (Number(fx.params?.dLng) || 0),
+  }
+})
+
+const displayCheckpoints = computed(() => {
+  if (!fakeTargetFx.value || !displayTarget.value) return checkpoints.value
+  return checkpoints.value.map((cp, i) => (i === activeIndex.value ? displayTarget.value : cp))
+})
+
+// Post-effect notice: when an effect that was active against us disappears,
+// tell the team they were sabotaged (never by whom) for 15 s.
+const sabNotice = ref(false)
+let sabNoticeTimer = null
+let prevSabotageIds = new Set()
+watch(activeSabotage, (list) => {
+  const ids = new Set(list.map(e => e.id))
+  for (const id of prevSabotageIds) {
+    if (!ids.has(id)) {
+      sabNotice.value = true
+      clearTimeout(sabNoticeTimer)
+      sabNoticeTimer = setTimeout(() => { sabNotice.value = false }, 15_000)
+      break
+    }
+  }
+  prevSabotageIds = ids
+})
+
+// Navigator's discreet role peek (game mode, before a team is bound).
+const roleOpen = ref(false)
 
 const targetCityLabel = computed(() => {
   const cp = activeCheckpoint.value
@@ -376,8 +478,29 @@ const targetCityLabel = computed(() => {
   return cp.city || ''
 })
 
+function haversineMeters(a, b) {
+  const R = 6371000
+  const toRad = (d) => (d * Math.PI) / 180
+  const dLat = toRad(b.lat - a.lat)
+  const dLon = toRad(b.lng - a.lng)
+  const x = Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRad(a.lat)) * Math.cos(toRad(b.lat)) * Math.sin(dLon / 2) ** 2
+  return R * 2 * Math.atan2(Math.sqrt(x), Math.sqrt(1 - x))
+}
+
+// Distance shown in the HUD. Under FLYTTA MÅL it counts down toward the
+// DISPLACED point (consistent with compass + map); otherwise the real one.
+const displayedDistance = computed(() => {
+  const fx = fakeTargetFx.value
+  if (fx && userLocation.value && displayTarget.value &&
+      Number.isFinite(displayTarget.value.lat) && Number.isFinite(displayTarget.value.lng)) {
+    return haversineMeters(userLocation.value, displayTarget.value)
+  }
+  return distanceToTarget.value
+})
+
 const distanceLabel = computed(() => {
-  const d = distanceToTarget.value
+  const d = displayedDistance.value
   if (d == null || !Number.isFinite(d)) return '—'
   if (d < 950) return `${Math.round(d)} m`
   if (d < 10_000) return `${(d / 1000).toFixed(2)} km`
@@ -418,6 +541,7 @@ const stopInitialCenterWatch = watch(startPoint, (sp) => {
 
 let fallbackCenterTimer = null
 onMounted(() => {
+  sabTickTimer = setInterval(() => { nowTick.value = Date.now() }, 1000)
   restoreTeamFromUrl()
   // Only if there's no start checkpoint at all (e.g. routes not configured):
   // fall back to GPS, then last known position, then the Öland default.
@@ -434,6 +558,8 @@ onMounted(() => {
 })
 onBeforeUnmount(() => {
   if (fallbackCenterTimer) clearTimeout(fallbackCenterTimer)
+  if (sabTickTimer) clearInterval(sabTickTimer)
+  if (sabNoticeTimer) clearTimeout(sabNoticeTimer)
 })
 
 function seedTeamLocation(t, clearHistory = false) {
@@ -606,6 +732,125 @@ function sendTeamChat() {
 .switch-op-btn:hover {
   background: rgba(0, 204, 255, 0.12);
   color: #00ccff;
+}
+
+/* Stacked fixed buttons above BYT OPERATION (bottom: 12px). */
+.switch-role-btn {
+  bottom: 52px;
+}
+
+.peek-role-btn {
+  bottom: 92px;
+  border-color: rgba(255, 85, 102, 0.45);
+  color: #d98a94;
+}
+
+.peek-role-btn:hover {
+  background: rgba(255, 85, 102, 0.12);
+  color: #ff5566;
+}
+
+/* ---- device role gate ---- */
+.device-gate {
+  position: fixed;
+  inset: 0;
+  background: #0a0a0a;
+  display: flex;
+  align-items: center;
+  justify-content: safe center;
+  z-index: 2150; /* above welcome (2100), below join gate (2200) */
+  font-family: 'JetBrains Mono', 'Courier New', monospace;
+  color: #00ccff;
+  padding: 20px;
+  overflow: auto;
+}
+
+.device-gate::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(
+    0deg,
+    rgba(0, 204, 255, 0.025) 0px,
+    rgba(0, 204, 255, 0.025) 1px,
+    transparent 1px,
+    transparent 3px
+  );
+  pointer-events: none;
+}
+
+.device-frame {
+  position: relative;
+  width: 100%;
+  max-width: 480px;
+  padding: 36px 28px;
+  background: rgba(0, 0, 0, 0.88);
+  border: 1px solid rgba(0, 204, 255, 0.3);
+  box-shadow: 0 0 60px rgba(0, 204, 255, 0.18), inset 0 0 30px rgba(0, 204, 255, 0.04);
+  box-sizing: border-box;
+}
+
+.device-frame .corner {
+  position: absolute;
+  width: 16px;
+  height: 16px;
+  border: 2px solid #00ccff;
+  opacity: 0.8;
+}
+.device-frame .top-left     { top: 6px;    left: 6px;    border-right: none;  border-bottom: none; }
+.device-frame .top-right    { top: 6px;    right: 6px;   border-left: none;   border-bottom: none; }
+.device-frame .bottom-left  { bottom: 6px; left: 6px;    border-right: none;  border-top: none; }
+.device-frame .bottom-right { bottom: 6px; right: 6px;   border-left: none;   border-top: none; }
+
+.device-gate-head {
+  font-size: 1.2rem;
+  font-weight: 900;
+  letter-spacing: 0.25em;
+  margin-bottom: 8px;
+  text-align: center;
+}
+
+.device-gate-sub {
+  color: #888;
+  font-size: 0.8rem;
+  text-align: center;
+  margin: 0 0 22px;
+}
+
+.device-option {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  background: transparent;
+  border: 1px solid rgba(0, 204, 255, 0.4);
+  color: #00ccff;
+  font-family: inherit;
+  padding: 18px 14px;
+  margin-bottom: 14px;
+  cursor: pointer;
+  transition: all 0.2s;
+  text-align: center;
+}
+
+.device-option:hover {
+  background: rgba(0, 204, 255, 0.1);
+  box-shadow: 0 0 18px rgba(0, 204, 255, 0.35);
+}
+
+.device-opt-icon { font-size: 1.9rem; }
+
+.device-opt-title {
+  font-size: 0.95rem;
+  font-weight: 900;
+  letter-spacing: 0.24em;
+}
+
+.device-opt-sub {
+  font-size: 0.7rem;
+  line-height: 1.45;
+  color: #9bc7d6;
 }
 
 .switch-op-name {

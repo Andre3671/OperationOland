@@ -126,6 +126,33 @@
         <div class="sidebar-subtitle">Live tracking, route deviation och total körd distans</div>
       </div>
 
+      <!-- Play mode for THIS operation: game (full competition) or explore
+           (relaxed sightseeing). Editable while planning; broadcast live. -->
+      <div class="meeting-section">
+        <div class="section-title">SPELLÄGE</div>
+        <div class="mode-toggle-row">
+          <button
+            class="mode-pick-btn"
+            :class="{ active: mode === 'game' }"
+            @click="setOperationMode('game')"
+            title="Fullt spel: fototvång vid checkpoints, fuskdetektering med rödlås/strafftid, hemliga roller och sabotage."
+          >🎖 SPEL</button>
+          <button
+            class="mode-pick-btn is-explore"
+            :class="{ active: mode === 'explore' }"
+            @click="setOperationMode('explore')"
+            title="Avslappnad upptäcktsfärd: inga straff eller fototvång, lagets egen position syns på kartan, stoppen är infokort."
+          >🌿 UTFORSKNING</button>
+        </div>
+        <p class="gen-hint" style="margin-top: 8px;">
+          <b>SPEL</b> = som vanligt: bildbevis, fuskdetektering (rödlås + strafftid) och hemliga
+          roller med sabotage. <b>UTFORSKNING</b> = samma rutt och kompass, men inga krav:
+          foton är frivilliga minnesbilder, inget fusksystem, egen position syns på kartan
+          och checkpoints är bara "här finns något coolt"-stopp. Gäller denna operation och
+          slår igenom direkt hos anslutna spelare.
+        </p>
+      </div>
+
       <!-- <div v-if="isLoading" class="sidebar-loading">Laddar data...</div> -->
 
       <div class="sidebar-section">
@@ -188,12 +215,15 @@
                   <span class="bd-pos">+{{ row.breakdown.missionComplete }}</span><span class="bd-label">uppdrag</span>
                   <span class="bd-pos">+{{ row.breakdown.meetingBonus }}</span><span class="bd-label">återsamling</span>
                   <span class="bd-neg">{{ row.breakdown.cheatPenalty }}</span><span class="bd-label">fusk</span>
+                  <template v-if="row.breakdown.sabotagePenalty">
+                    <span class="bd-neg">{{ row.breakdown.sabotagePenalty }}</span><span class="bd-label">sabotage</span>
+                  </template>
                 </div>
               </div>
             </div>
           </div>
           <div class="scoring-legend">
-            +{{ SCORING.arrival }} ankomst · +{{ SCORING.missionComplete }} uppdrag slutfört · +{{ SCORING.meetingBonus }} gemensamt (återsamling) · −{{ SCORING.cheatOffense }} per fusk + −{{ SCORING.cheatPer30s }} / 30s · snabbast tid avgör vid lika poäng
+            +{{ SCORING.arrival }} ankomst · +{{ SCORING.missionComplete }} uppdrag slutfört · +{{ SCORING.meetingBonus }} gemensamt (återsamling) · −{{ SCORING.cheatOffense }} per fusk + −{{ SCORING.cheatPer30s }} / 30s<template v-if="mode === 'game'"> · sabotage kostar 10–25 p av eget lags poäng</template> · snabbast tid avgör vid lika poäng
           </div>
         </div>
       </div>
@@ -267,9 +297,89 @@
           <div class="roster-team-name" :style="{ color: TEAM_COLORS[key] }">{{ teams[key]?.name || key.toUpperCase() }}</div>
           <div class="roster-members">
             <span v-for="(person, i) in teamRosters[key]" :key="i" class="roster-member" :class="{ 'is-driver': person.driver }">
-              {{ person.name }}<span v-if="person.driver" title="Har körkort — förare"> 🚗</span>
+              {{ person.name }}<span v-if="person.driver" title="Har körkort — förare"> 🚗</span><span v-if="person.role === 'sabotor'" title="Lagets hemliga sabotör"> 🕶️</span>
             </span>
           </div>
+          <div v-if="mode === 'game'" class="roster-sab-row">
+            <label class="roster-sab-label">Sabotör:</label>
+            <select
+              class="checkpoint-input roster-sab-select"
+              :value="saboteurNameOf(key)"
+              @change="setSaboteur(key, $event.target.value)"
+            >
+              <option value="">— ingen —</option>
+              <option v-for="p in teamRosters[key]" :key="p.name" :value="p.name">{{ p.name }}</option>
+            </select>
+          </div>
+        </div>
+        <button v-if="mode === 'game'" class="add-btn" style="margin-top: 8px; width: 100%;" @click="randomizeSaboteurs" title="Väljer en slumpad medlem som sabotör i varje lag med minst 2 medlemmar">
+          🎲 SLUMPA SABOTÖRER
+        </button>
+      </div>
+
+      <!-- Sabotage: live ability log + secret text missions (game mode) -->
+      <div class="meeting-section" v-if="mode === 'game'">
+        <div class="section-title">SABOTAGE</div>
+
+        <div class="gen-hint" style="margin-bottom: 10px;">
+          Sabotörerna använder digitala förmågor från sina egna mobiler (MEDLEM-läget i appen).
+          Varje användning kostar poäng från sabotörens EGET lag och loggas här — lagen ser
+          aldrig vem som låg bakom förrän STORA AVSLÖJANDET i resultatvyn.
+        </div>
+
+        <div class="arrival-log sab-log">
+          <div v-if="sabotageLog.length === 0" class="log-empty">Inga sabotage genomförda ännu.</div>
+          <div v-for="e in recentSabotage" :key="e.id" class="arrival-entry">
+            <div class="arrival-head">
+              <span :style="{ color: TEAM_COLORS[e.byTeam] }">{{ teamDisplay(e.byTeam) }} ({{ e.byName }})</span>
+              <span>{{ formatTime(e.at) }}</span>
+            </div>
+            <div class="arrival-body">
+              {{ abilityLabel(e.type) }} → <span :style="{ color: TEAM_COLORS[e.targetTeam] }">{{ teamDisplay(e.targetTeam) }}</span>
+            </div>
+            <div class="arrival-meta">
+              −{{ e.cost || 0 }} p för {{ teamDisplay(e.byTeam) }}
+              <span v-if="isEffectActive(e.id)" class="sab-active-tag"> · PÅGÅR NU</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Optional secret text missions per saboteur -->
+        <div v-if="saboteurTeams.length" class="sab-missions-block">
+          <div class="section-title" style="font-size: 0.7rem; margin: 14px 0 8px;">HEMLIGA UPPDRAG (TEXT)</div>
+          <div v-for="key in saboteurTeams" :key="key" class="sab-team-block">
+            <div class="roster-team-name" :style="{ color: TEAM_COLORS[key] }">
+              {{ teamDisplay(key) }} — sabotör: {{ saboteurNameOf(key) }}
+            </div>
+            <div v-for="m in missionsFor(key)" :key="m.id" class="sab-mission-row" :class="{ 'is-done': m.done }">
+              <span class="sab-mission-status">{{ m.done ? '✓' : '○' }}</span>
+              <span class="sab-mission-text">
+                mot <b :style="{ color: TEAM_COLORS[m.targetTeam] }">{{ teamDisplay(m.targetTeam) }}</b>: {{ m.text }}
+                <span v-if="m.done && m.doneAt" class="sab-mission-time">({{ formatTime(m.doneAt) }})</span>
+              </span>
+              <button class="kick-btn" @click="removeMission(m.id)" title="Ta bort uppdraget">✕</button>
+            </div>
+            <div class="sab-mission-add">
+              <select v-model="missionDrafts[key].targetTeam" class="checkpoint-input sab-target-select">
+                <option disabled value="">Mållag…</option>
+                <option v-for="t in missionTargetsFor(key)" :key="t.key" :value="t.key">{{ t.name }}</option>
+              </select>
+              <input
+                v-model="missionDrafts[key].text"
+                class="checkpoint-input"
+                placeholder="Uppdragstext (ofarligt partybus!)"
+                maxlength="300"
+                @keyup.enter="addMission(key)"
+              />
+              <button class="add-btn" :disabled="!missionDrafts[key].targetTeam || !missionDrafts[key].text.trim()" @click="addMission(key)">+</button>
+            </div>
+          </div>
+          <button class="add-btn" style="margin-top: 8px; width: 100%;" @click="randomizeMissions" title="Lägger till 2 slumpade uppdrag ur standardpoolen per sabotör (endast ofarliga sociala bus)">
+            🎲 SLUMPA UPPDRAG
+          </button>
+        </div>
+        <div v-else class="gen-hint">
+          Utse sabotörer i LAGINDELNING ovan för att kunna lägga hemliga text-uppdrag.
         </div>
       </div>
 
@@ -577,13 +687,15 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, reactive, computed, onMounted, watch } from 'vue'
 import AdminMap from '../components/AdminMap.vue'
 import { useAdminTracking } from '../composables/useAdminTracking'
 import { restartSync } from '../store/simulationStore'
 import { authMe, authLogin, authRegister, authLogout, setAdminToken, api } from '../lib/syncClient'
 import { SLOT_DEFS, SLOT_KEYS, MAX_TEAMS } from '../lib/teamSlots'
 import { computeLeaderboard, SCORING } from '../lib/scoring'
+import { ABILITY_LABELS } from '../lib/sabotageAbilities'
+import { randomSabotageMissions } from '../lib/sabotageMissions'
 
 const {
   teamSummaries,
@@ -627,6 +739,10 @@ const {
   sendChatMessage,
   configureSlots,
   teamRosters,
+  mode,
+  sabotageMissions,
+  sabotageEffects,
+  sabotageLog,
   operationsList,
   activeOperationId,
   createOperation,
@@ -641,7 +757,111 @@ const leaderboard = computed(() => computeLeaderboard({
   teamProgress: teamProgress.value,
   teamCheating: teamCheating.value,
   arrivalLog: arrivalLog.value,
+  sabotageLog: sabotageLog.value,
 }))
+
+// ---- play mode (game / explore) ----
+
+function setOperationMode(next) {
+  if (mode.value === next) return
+  if (next === 'explore' && !confirm(
+    'Byt till UTFORSKNING?\n\nFuskdetektering och fototvång stängs av, lagens egen position visas på kartan och alla roller/sabotage inaktiveras. Slår igenom direkt hos anslutna spelare.'
+  )) return
+  mode.value = next // synkas via admin-patch
+}
+
+// ---- saboteur assignment (roster roles) ----
+
+function saboteurNameOf(key) {
+  return (teamRosters.value[key] || []).find(p => p?.role === 'sabotor')?.name || ''
+}
+
+// At most one saboteur per team — assigning a new one clears the old.
+function setSaboteur(key, name) {
+  teamRosters.value = {
+    ...teamRosters.value,
+    [key]: (teamRosters.value[key] || []).map(p => ({
+      ...p,
+      role: name && p.name === name ? 'sabotor' : null,
+    })),
+  }
+}
+
+// One random saboteur per team with 2+ members; smaller teams are cleared.
+function randomizeSaboteurs() {
+  const next = { ...teamRosters.value }
+  for (const key of rosterTeams.value) {
+    const roster = next[key] || []
+    if (roster.length < 2) {
+      next[key] = roster.map(p => ({ ...p, role: null }))
+      continue
+    }
+    const pick = roster[Math.floor(Math.random() * roster.length)].name
+    next[key] = roster.map(p => ({ ...p, role: p.name === pick ? 'sabotor' : null }))
+  }
+  teamRosters.value = next
+}
+
+// ---- sabotage log + text mission editor ----
+
+const teamDisplay = (key) => teams.value[key]?.name || (key || '').toUpperCase()
+const abilityLabel = (type) => ABILITY_LABELS[type] || type
+
+const recentSabotage = computed(() => [...sabotageLog.value].slice(-25).reverse())
+
+function isEffectActive(id) {
+  const fx = (sabotageEffects.value || []).find(e => e && e.id === id)
+  return !!fx && Number(fx.expiresAt) > Date.now()
+}
+
+const saboteurTeams = computed(() => rosterTeams.value.filter(key => saboteurNameOf(key)))
+
+function missionsFor(key) {
+  return sabotageMissions.value.filter(m => m && m.team === key)
+}
+
+function missionTargetsFor(key) {
+  return SLOT_KEYS
+    .filter(k => k !== key && teams.value[k]?.enabled)
+    .map(k => ({ key: k, name: teamDisplay(k) }))
+}
+
+// Per-saboteur add-mission drafts. Keys are created lazily as saboteurs
+// appear so the template can bind v-model without guards.
+const missionDrafts = reactive({})
+watch(saboteurTeams, (keys) => {
+  for (const key of keys) {
+    if (!missionDrafts[key]) missionDrafts[key] = { targetTeam: '', text: '' }
+  }
+}, { immediate: true })
+
+function addMission(team) {
+  const draft = missionDrafts[team]
+  if (!draft?.targetTeam || !draft.text.trim()) return
+  sabotageMissions.value = [...sabotageMissions.value, {
+    id: `sab-${team}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+    team,
+    targetTeam: draft.targetTeam,
+    text: draft.text.trim(),
+    done: false,
+    doneAt: null,
+  }]
+  draft.text = ''
+}
+
+function removeMission(id) {
+  sabotageMissions.value = sabotageMissions.value.filter(m => m.id !== id)
+}
+
+// 2 random missions from the default pool per saboteur (harmless social
+// pranks only — see src/lib/sabotageMissions.js).
+function randomizeMissions() {
+  const additions = []
+  for (const key of saboteurTeams.value) {
+    additions.push(...randomSabotageMissions(key, missionTargetsFor(key), 2))
+  }
+  if (additions.length) sabotageMissions.value = [...sabotageMissions.value, ...additions]
+}
 
 // ---- account auth ----
 //
@@ -1830,6 +2050,121 @@ const toggleSharedSimulation = () => {
 
 .roster-member.is-driver {
   border-color: rgba(0, 255, 136, 0.35);
+}
+
+/* ---- play mode toggle ---- */
+
+.mode-toggle-row {
+  display: flex;
+  gap: 8px;
+}
+
+.mode-pick-btn {
+  flex: 1;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid #333;
+  color: #999;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  padding: 10px 8px;
+  border-radius: 3px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.mode-pick-btn:hover { border-color: #666; color: #ddd; }
+
+.mode-pick-btn.active {
+  background: rgba(0, 204, 255, 0.12);
+  border-color: #00ccff;
+  color: #00ccff;
+  box-shadow: 0 0 12px rgba(0, 204, 255, 0.25);
+}
+
+.mode-pick-btn.is-explore.active {
+  background: rgba(0, 255, 136, 0.1);
+  border-color: #00ff88;
+  color: #00ff88;
+  box-shadow: 0 0 12px rgba(0, 255, 136, 0.25);
+}
+
+/* ---- saboteur assignment + sabotage sections ---- */
+
+.roster-sab-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.roster-sab-label {
+  font-size: 0.68rem;
+  color: #d98a94;
+  letter-spacing: 0.08em;
+  font-weight: 700;
+  flex: 0 0 auto;
+}
+
+.roster-sab-select {
+  flex: 1;
+  min-width: 0;
+  padding: 6px 8px;
+  font-size: 0.75rem;
+}
+
+.sab-active-tag {
+  color: #ff4df0;
+  font-weight: 800;
+}
+
+.sab-team-block {
+  margin-bottom: 14px;
+}
+
+.sab-mission-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 6px 8px;
+  border: 1px dashed rgba(255, 85, 102, 0.35);
+  background: rgba(255, 85, 102, 0.04);
+  margin-bottom: 6px;
+  font-size: 0.74rem;
+  line-height: 1.4;
+  color: #ccc;
+}
+
+.sab-mission-row.is-done {
+  border-color: rgba(0, 255, 136, 0.35);
+  background: rgba(0, 255, 136, 0.04);
+}
+
+.sab-mission-status {
+  flex: 0 0 auto;
+  font-weight: 800;
+  color: #ff8896;
+}
+
+.sab-mission-row.is-done .sab-mission-status { color: #00ff88; }
+
+.sab-mission-text { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+
+.sab-mission-time { color: #888; font-size: 0.66rem; }
+
+.sab-mission-add {
+  display: flex;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.sab-mission-add .checkpoint-input { min-width: 0; }
+
+.sab-target-select {
+  flex: 0 0 110px;
+  padding: 6px;
+  font-size: 0.72rem;
 }
 
 .op-modal-backdrop {

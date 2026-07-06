@@ -41,7 +41,9 @@
       "Bash(docker rmi *)",
       "Bash(npm run *)",
       "Bash(node --check \"c:\\\\Users\\\\babyb\\\\Desktop\\\\Projekt\\\\OperationOland\\\\server\\\\src\\\\index.js\")",
-      "Bash(curl -s http://127.0.0.1:18090/api/health)"
+      "Bash(curl -s http://127.0.0.1:18090/api/health)",
+      "Bash(./gradlew assembleDebug -q)",
+      "Bash(echo \"exit: $?\")"
     ]
   }
 }

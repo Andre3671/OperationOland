@@ -117,7 +117,47 @@
           </div>
         </div>
       </div>
-      <RoleReveal v-else standalone />
+      <!-- First run: identify + dramatic role reveal, then the map. -->
+      <RoleReveal
+        v-else-if="memberView === 'role'"
+        standalone
+        @identified="onMemberIdentified"
+        @done="memberView = 'map'"
+      />
+      <!-- Member home: read-only live map of the OWN team's route state
+           (live via the join-code WS). No GPS, no arrivals, no anti-cheat. -->
+      <div v-else class="member-map">
+        <header class="member-head">
+          <div class="member-head-left">
+            <span class="member-team" :style="{ color: memberTeamColor }">{{ memberTeamDisplay }}</span>
+            <span class="member-name">{{ memberName }}</span>
+          </div>
+          <button class="member-badge" :class="{ 'is-sab': memberIsSaboteur }" @click="memberRoleOpen = true" title="Visa ditt rollkort">
+            {{ memberIsSaboteur ? '🕵️ SABOTÖR' : '🎖 AGENT' }}
+          </button>
+        </header>
+        <main class="member-map-main">
+          <MapView
+            :key="memberMapKey"
+            :center="memberCenter"
+            :zoom="11"
+            :visible="true"
+            :checkpoints="memberCheckpoints"
+            :activeIndex="memberActiveIndex"
+            :teamColor="memberTeamColor"
+            :team="memberTeam ? memberTeam + '-member' : 'member'"
+          />
+        </main>
+        <button v-if="memberIsSaboteur" class="member-sab-btn" @click="memberRoleOpen = true">🕵️ SABOTAGE</button>
+        <button class="switch-op-btn member-id-btn" @click="memberChangeIdentity">⇄ BYT LAG / NAMN</button>
+        <RoleReveal
+          v-if="memberRoleOpen"
+          :initial-team="memberTeam"
+          :initial-name="memberName"
+          instant-reveal
+          @close="memberRoleOpen = false"
+        />
+      </div>
     </template>
 
     <div v-else-if="!isOperationActive && !teamReady" class="holding-screen">
@@ -224,6 +264,7 @@
       :checkpoint="activeCheckpoint"
       :team="teamName"
       :mode="mode"
+      :next-crew="nextCrew"
       @unlock="completeMission"
     />
 
@@ -241,6 +282,12 @@
           <span v-if="activeCheckpoint?.region" class="region-tag">{{ activeCheckpoint.region }}</span>
           <span class="distance-tag">{{ distanceLabel }}</span>
           <span v-if="targetClock" class="clock-tag">🕒 {{ targetClock }}</span>
+        </span>
+      </div>
+      <div class="debug-row" v-if="currentCrew || teamSaboteurName">
+        <span class="debug-label">BESÄTTNING:</span>
+        <span class="debug-value">
+          <template v-if="currentCrew">🚗 {{ currentCrew.driver }} &nbsp;·&nbsp; 🧭 {{ currentCrew.navigator }}</template><template v-if="teamSaboteurName"><template v-if="currentCrew"> &nbsp;·&nbsp; </template>🕵️ {{ teamSaboteurName }}</template>
         </span>
       </div>
       <div class="debug-row" v-if="isOverlayActive">
@@ -270,13 +317,14 @@ import { useGeofencing } from '../composables/useGeofencing'
 import { useSimulationStore, restartSync } from '../store/simulationStore'
 import { getJoinCode, getJoinOperationName, clearJoinCode } from '../lib/syncClient'
 import { colorForTeam } from '../lib/teamSlots'
+import { crewForLeg } from '../lib/roleRotation'
 
 // Core Reactive State. Empty string until a team is picked — useGeofencing
 // uses this to decide whether to broadcast GPS to the store.
 const teamRef = ref(null)
 const teamName = computed(() => teamRef.value?.toLowerCase() || '')
 
-const { getTeamPosition, updateTeamPosition, recordTeamStart, isSimulationMode, isOperationActive, walkingMode, teams, setTeamActive, teamCheating, chatMessages, sendChatMessage, claimSlot, claimSlotKey, connectionStatus, mode, sabotageEffects } = useSimulationStore()
+const { getTeamPosition, updateTeamPosition, recordTeamStart, isSimulationMode, isOperationActive, walkingMode, teams, setTeamActive, teamCheating, chatMessages, sendChatMessage, claimSlot, claimSlotKey, connectionStatus, mode, sabotageEffects, teamRosters, globalStart } = useSimulationStore()
 
 // Per-operation play mode. Explore = relaxed sightseeing: no anti-cheat, own
 // position on the map, info stops instead of gated missions.
@@ -309,6 +357,77 @@ function switchDeviceRole() {
   try { localStorage.removeItem(DEVICE_ROLE_KEY) } catch (_) {}
 }
 
+// ---- member device home (map + role) ----
+//
+// After the member has identified themselves (team + roster name, stored by
+// RoleReveal in localStorage), their home screen is a read-only live map of
+// their own team's route: state arrives over the join-code WS, so no GPS
+// binding or position broadcast is needed.
+const MEMBER_TEAM_KEY = 'oo-member-team'
+const MEMBER_NAME_KEY = 'oo-member-name'
+
+function readMemberIdentity() {
+  try {
+    const team = localStorage.getItem(MEMBER_TEAM_KEY) || ''
+    const name = localStorage.getItem(MEMBER_NAME_KEY) || ''
+    return team && name ? { team, name } : null
+  } catch (_) { return null }
+}
+
+const memberIdentity = ref(readMemberIdentity())
+// Returning members go straight to the map; first-timers get the reveal flow.
+const memberView = ref(memberIdentity.value ? 'map' : 'role')
+const memberRoleOpen = ref(false)
+
+function onMemberIdentified(info) {
+  if (info?.team && info?.name) memberIdentity.value = { team: info.team, name: info.name }
+}
+
+function memberChangeIdentity() {
+  try {
+    localStorage.removeItem(MEMBER_TEAM_KEY)
+    localStorage.removeItem(MEMBER_NAME_KEY)
+  } catch (_) {}
+  memberRoleOpen.value = false
+  memberIdentity.value = null
+  memberView.value = 'role'
+}
+
+const memberTeam = computed(() => memberIdentity.value?.team || '')
+const memberName = computed(() => memberIdentity.value?.name || '')
+const { checkpoints: memberCheckpoints, activeIndex: memberActiveIndex } = useTeamCheckpoints(memberTeam)
+const memberTeamColor = computed(() => colorForTeam(memberTeam.value))
+const memberTeamDisplay = computed(() =>
+  teams.value[memberTeam.value]?.name || memberTeam.value.toUpperCase() || 'LAG'
+)
+
+// The saboteur is public WITHIN the team, so the badge derives straight from
+// the broadcast roster (reacts live if the admin re-assigns).
+const memberIsSaboteur = computed(() => {
+  if (isExplore.value) return false
+  const needle = memberName.value.trim().toLowerCase()
+  if (!needle) return false
+  return (teamRosters.value?.[memberTeam.value] || [])
+    .some(p => p?.role === 'sabotor' && (p.name || '').trim().toLowerCase() === needle)
+})
+
+// Members have no GPS fix — center on the team's first checkpoint, else the
+// global start, else the Öland default.
+const memberCenter = computed(() => {
+  const cps = memberCheckpoints.value
+  const start = cps.find(cp => cp.type === 'start') || cps[0]
+  if (start && Number.isFinite(start.lat) && Number.isFinite(start.lng)) return [start.lat, start.lng]
+  const gs = globalStart.value
+  if (gs && Number.isFinite(gs.lat) && Number.isFinite(gs.lng)) return [gs.lat, gs.lng]
+  return [56.8, 16.6]
+})
+
+// Map.vue intentionally never re-centers on prop changes, so remount it when
+// the center basis changes (initial state load, admin regenerates the route).
+const memberMapKey = computed(() =>
+  `${memberTeam.value}|${memberCenter.value[0].toFixed(3)},${memberCenter.value[1].toFixed(3)}`
+)
+
 const currentCheatingStats = computed(() => {
   if (!teamName.value) return { offenses: 0, seconds: 0 }
   return teamCheating.value[teamName.value] || { offenses: 0, seconds: 0 }
@@ -317,6 +436,22 @@ const { checkpoints, activeIndex, advance } = useTeamCheckpoints(teamName)
 
 const teamReady = computed(() => !!teamRef.value)
 const activeCheckpoint = computed(() => checkpoints.value[activeIndex.value] || null)
+
+// Crew rotation: who drives / navigates this leg. Random but even — same
+// deterministic schedule on every device (roster + join code as seed), and
+// it advances together with the checkpoint index. A sole flagged driver
+// always drives and is never picked as navigator.
+const crewSeed = computed(() => `${getJoinCode()}|${teamName.value}`)
+const teamRoster = computed(() => teamRosters.value?.[teamName.value] || [])
+const currentCrew = computed(() => crewForLeg(teamRoster.value, activeIndex.value, crewSeed.value))
+const nextCrew = computed(() => crewForLeg(teamRoster.value, activeIndex.value + 1, crewSeed.value))
+
+// The team's saboteur is PUBLIC within the own team — shown in the HUD crew
+// row (game mode only). Other teams still never learn who it is.
+const teamSaboteurName = computed(() => {
+  if (isExplore.value) return ''
+  return teamRoster.value.find(p => p?.role === 'sabotor')?.name || ''
+})
 
 const teamColor = computed(() => colorForTeam(teamName.value))
 
@@ -737,6 +872,108 @@ function sendTeamChat() {
 /* Stacked fixed buttons above BYT OPERATION (bottom: 12px). */
 .switch-role-btn {
   bottom: 52px;
+}
+
+.member-id-btn {
+  bottom: 92px;
+}
+
+/* ---- member map home ---- */
+.member-map {
+  position: fixed;
+  inset: 0;
+  background: #0a0a0a;
+  display: flex;
+  flex-direction: column;
+  z-index: 1900; /* below join gate/device gate, above the base layout */
+}
+
+.member-head {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 12px;
+  background: rgba(0, 0, 0, 0.92);
+  border-bottom: 1px solid rgba(0, 204, 255, 0.2);
+  font-family: 'JetBrains Mono', monospace;
+}
+
+.member-head-left {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.member-team {
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  font-size: 0.85rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.member-name {
+  color: #888;
+  font-size: 0.72rem;
+  letter-spacing: 0.05em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.member-badge {
+  flex: 0 0 auto;
+  background: rgba(0, 255, 136, 0.08);
+  border: 1px solid rgba(0, 255, 136, 0.45);
+  color: #00ff88;
+  font-family: inherit;
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  padding: 6px 10px;
+  border-radius: 3px;
+  cursor: pointer;
+}
+
+.member-badge.is-sab {
+  background: rgba(255, 85, 102, 0.1);
+  border-color: rgba(255, 85, 102, 0.55);
+  color: #ff5566;
+}
+
+.member-map-main {
+  flex: 1 1 auto;
+  position: relative;
+  min-height: 0;
+}
+
+.member-sab-btn {
+  position: fixed;
+  right: 12px;
+  bottom: 12px;
+  z-index: 2000;
+  background: rgba(20, 2, 6, 0.9);
+  border: 1px solid #ff5566;
+  color: #ff5566;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  padding: 13px 16px;
+  border-radius: 4px;
+  cursor: pointer;
+  box-shadow: 0 0 18px rgba(255, 85, 102, 0.35);
+}
+
+.member-sab-btn:hover {
+  background: #ff5566;
+  color: #000;
 }
 
 .peek-role-btn {

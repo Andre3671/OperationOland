@@ -210,6 +210,13 @@
           </div>
         </div>
 
+        <!-- Next-leg crew (rotation) — not on finish: there is no next leg -->
+        <div v-if="nextCrew && checkpoint.type !== 'finish'" class="next-crew">
+          <span class="next-crew-label">NÄSTA ETAPP</span>
+          <span class="next-crew-value">🚗 FÖRARE: <b>{{ nextCrew.driver }}</b></span>
+          <span class="next-crew-value">🧭 NAVIGATÖR: <b>{{ nextCrew.navigator }}</b></span>
+        </div>
+
         <!-- Footer Decor -->
         <div class="modal-footer">
           <div class="scanner-line"></div>
@@ -233,6 +240,9 @@ const props = defineProps({
   // informational "här finns något coolt" screen: no photo proof, no
   // hold-to-confirm — just a FORTSÄTT button.
   mode: { type: String, default: 'game' },
+  // { driver, navigator } for the NEXT leg (crew rotation) — shown so the
+  // team swaps seats while they're stopped, not on the road.
+  nextCrew: { type: Object, default: null },
 })
 
 const emit = defineEmits(['unlock'])
@@ -748,6 +758,31 @@ onUnmounted(() => {
   0% { opacity: 0; }
   50% { opacity: 1; }
   100% { opacity: 0; }
+}
+
+.next-crew {
+  margin-top: 24px;
+  padding: 10px 14px;
+  border: 1px dashed currentColor;
+  opacity: 0.9;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px 18px;
+  font-size: 0.75rem;
+  letter-spacing: 0.08em;
+}
+
+.next-crew-label {
+  width: 100%;
+  text-align: center;
+  font-size: 0.62rem;
+  letter-spacing: 0.24em;
+  opacity: 0.65;
+}
+
+.next-crew-value b {
+  font-weight: 700;
 }
 
 .modal-footer {

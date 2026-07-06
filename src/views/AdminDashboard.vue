@@ -308,7 +308,12 @@
               @change="setSaboteur(key, $event.target.value)"
             >
               <option value="">— ingen —</option>
-              <option v-for="p in teamRosters[key]" :key="p.name" :value="p.name">{{ p.name }}</option>
+              <option
+                v-for="p in teamRosters[key]"
+                :key="p.name"
+                :value="p.name"
+                :disabled="p.name === soleDriverOf(teamRosters[key])"
+              >{{ p.name }}{{ p.name === soleDriverOf(teamRosters[key]) ? ' (enda föraren)' : '' }}</option>
             </select>
           </div>
         </div>
@@ -787,16 +792,24 @@ function setSaboteur(key, name) {
   }
 }
 
+// A team's only flagged driver always drives (see roleRotation.js) and must
+// not carry any other role — exclude them from the saboteur pool.
+function soleDriverOf(roster) {
+  const drivers = (roster || []).filter(p => p?.driver)
+  return drivers.length === 1 ? drivers[0].name : ''
+}
+
 // One random saboteur per team with 2+ members; smaller teams are cleared.
 function randomizeSaboteurs() {
   const next = { ...teamRosters.value }
   for (const key of rosterTeams.value) {
     const roster = next[key] || []
-    if (roster.length < 2) {
+    const pool = roster.filter(p => p.name !== soleDriverOf(roster))
+    if (roster.length < 2 || pool.length === 0) {
       next[key] = roster.map(p => ({ ...p, role: null }))
       continue
     }
-    const pick = roster[Math.floor(Math.random() * roster.length)].name
+    const pick = pool[Math.floor(Math.random() * pool.length)].name
     next[key] = roster.map(p => ({ ...p, role: p.name === pick ? 'sabotor' : null }))
   }
   teamRosters.value = next

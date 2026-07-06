@@ -17,9 +17,9 @@
         <h2 class="role-title">DIN ROLL</h2>
         <div class="role-divider"></div>
         <p class="role-copy">
-          Varje deltagare har en hemlig roll i operationen.
-          Identifiera dig för att öppna din personalakt —
-          <strong>gör detta enskilt, utan att laget ser skärmen.</strong>
+          Varje deltagare har en roll i operationen. Identifiera dig för att
+          öppna din personalakt. Rollen är öppen inom laget —
+          <strong>men de andra lagen får inget veta.</strong>
         </p>
 
         <label class="role-label">DITT LAG
@@ -48,14 +48,15 @@
         </button>
       </div>
 
-      <!-- Step 2: privacy shield before the actual reveal -->
+      <!-- Step 2: dramatic pause before the reveal (the role is public
+           within the team, so this is theatre — not secrecy) -->
       <div v-else-if="step === 'shield'" class="role-body">
-        <div class="role-icon">🔒</div>
-        <h2 class="role-title">ENDAST FÖR DINA ÖGON</h2>
+        <div class="role-icon">📂</div>
+        <h2 class="role-title">AKTEN ÄR DEKRYPTERAD</h2>
         <div class="role-divider"></div>
         <p class="role-copy">
           Akten för <strong>{{ pickedName }}</strong> är dekrypterad.
-          Kontrollera att ingen annan kan se skärmen innan du fortsätter.
+          Ta ett djupt andetag — dags att se din roll.
         </p>
         <button class="role-btn" @click="step = 'reveal'">AVSLÖJA MIN ROLL</button>
       </div>
@@ -70,8 +71,9 @@
           <p class="role-copy">
             Du spelar med ditt lag som vanligt — men du har dessutom
             <strong>sabotage-förmågor riktade mot de andra lagen</strong>.
-            Avslöja dig inte. Allt loggas hos spelledningen och avslöjas
-            först vid resultatet.
+            Ditt lag känner till din roll, men de andra lagen har ingen aning
+            om vem du är. Allt loggas hos spelledningen och avslöjas för alla
+            vid resultatet.
           </p>
 
           <!-- Active effects fired by this saboteur -->
@@ -137,15 +139,16 @@
           <h2 class="role-title is-agent">AGENT</h2>
           <div class="role-divider"></div>
           <p class="role-copy">
-            Du är en lojal agent. Hjälp ditt lag att slutföra alla uppdrag —
-            men var vaksam: <strong>det kan finnas en sabotör i varje lag.</strong>
-            Lita inte blint på någon.
+            Du är en lojal agent. Hjälp ditt lag att slutföra alla uppdrag.
+            Er egen sabotör är känd inom laget — men var vaksam:
+            <strong>de andra lagens sabotörer kan slå till när som helst.</strong>
           </p>
         </template>
 
         <div v-if="error" class="role-error">{{ error }}</div>
 
-        <div class="role-warning">⚠ VISA INTE DEN HÄR SKÄRMEN FÖR LAGET</div>
+        <div v-if="role === 'sabotor'" class="role-warning">⚠ DE ANDRA LAGEN FÅR ALDRIG VETA VEM DU ÄR</div>
+        <button v-if="standalone" class="role-btn" @click="$emit('done')">TILL KARTAN →</button>
         <button v-if="standalone" class="role-btn ghost" @click="changeIdentity">BYT LAG / NAMN</button>
         <button v-else class="role-btn ghost" @click="$emit('close')">STÄNG AKTEN</button>
       </div>
@@ -166,12 +169,19 @@ import { api } from '../lib/syncClient'
 import { SABOTAGE_ABILITY_DEFS, SABOTAGE_COOLDOWN_MS, ABILITY_LABELS } from '../lib/sabotageAbilities'
 
 const props = defineProps({
-  // Standalone = the member device's home screen: no close button, the
-  // picked identity persists in localStorage and is restored on reopen.
+  // Standalone = the member device's first-run flow: no close button, the
+  // picked identity persists in localStorage, and the reveal ends with a
+  // "TILL KARTAN →" button (emits 'done') leading to the member map.
   standalone: { type: Boolean, default: false },
+  // Pre-filled identity (member map overlay): skips the pick step entirely.
+  initialTeam: { type: String, default: '' },
+  initialName: { type: String, default: '' },
+  // Jump straight from lookup to the reveal card (no dramatic pause) — used
+  // when reopening the console from the member map.
+  instantReveal: { type: Boolean, default: false },
 })
 
-defineEmits(['close'])
+const emit = defineEmits(['close', 'identified', 'done'])
 
 const MEMBER_TEAM_KEY = 'oo-member-team'
 const MEMBER_NAME_KEY = 'oo-member-name'
@@ -287,7 +297,8 @@ async function lookup() {
     const res = await api.fetchRole(pickedTeam.value, name)
     role.value = res?.role === 'sabotor' ? 'sabotor' : 'agent'
     missions.value = Array.isArray(res?.missions) ? res.missions : []
-    step.value = 'shield'
+    step.value = props.instantReveal ? 'reveal' : 'shield'
+    emit('identified', { team: pickedTeam.value, name, role: role.value })
     if (props.standalone) {
       try {
         localStorage.setItem(MEMBER_TEAM_KEY, pickedTeam.value)
@@ -359,8 +370,16 @@ function formatTime(ts) {
 }
 
 onMounted(() => {
-  // Member home: restore the stored identity and jump straight to the
-  // privacy shield (role is re-fetched so admin-side changes apply).
+  // Overlay with pre-filled identity (member map): skip the pick step and
+  // fetch the role directly (instantReveal decides shield vs. straight in).
+  if (props.initialTeam && props.initialName) {
+    pickedTeam.value = props.initialTeam
+    pickedName.value = props.initialName
+    lookup()
+    return
+  }
+  // Member first-run flow: restore the stored identity and re-fetch (so
+  // admin-side role changes apply).
   if (props.standalone) {
     let team = ''
     let name = ''

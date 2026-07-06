@@ -41,17 +41,24 @@ Efter anslutningskoden väljer varje mobil en **enhetsroll**:
 
 - **NAVIGATÖR** — lagets spelenhet (EN per lag): GPS-bindning, karta, kompass,
   checkpoints, chatt — precis som förut. Fuskdetekteringen gäller bara denna enhet.
-- **MEDLEM** — allas egna mobiler: ingen GPS, ingen fuskdetektering. Här finns
-  **DIN ROLL**-skärmen: välj lag + ditt namn ur laguppställningen ⇒ dramatiskt
-  rollkort — **AGENT** eller **SABOTÖR**. Identiteten sparas på enheten.
-  ("⇄ BYT ENHETSROLL" innan lagval om man råkade välja fel.)
+- **MEDLEM** — allas egna mobiler: ingen GPS, ingen fuskdetektering. Först
+  **DIN ROLL**-flödet: välj lag + ditt namn ur laguppställningen ⇒ dramatiskt
+  rollkort — **AGENT** eller **SABOTÖR**. Därefter blir hemskärmen en
+  **läs-karta** över det egna lagets rutt (live via anslutningskoden, ingen
+  positionssändning): kompakt header med lag/namn/rollmärke, och för
+  sabotören en flytande **🕵️ SABOTAGE**-knapp som öppnar konsolen ovanpå
+  kartan. Identiteten sparas på enheten. ("⇄ BYT ENHETSROLL" / "BYT LAG //
+  NAMN" om man råkade välja fel.)
 
 ## Sabotörer
 
 - Spelledaren utser **max en sabotör per lag** i **LAGINDELNING**
   (dropdown per lag, eller **🎲 SLUMPA SABOTÖRER** — en slumpad medlem per
   lag med minst 2 medlemmar).
-- Sabotören spelar med sitt lag som vanligt men har en hemlig
+- Sabotören är **öppen inom sitt eget lag** — namnet visas i navigatörens
+  BESÄTTNING-rad (🕵️) — men **anonym för alla andra lag**: offren får aldrig
+  veta vem eller vilket lag som låg bakom förrän STORA AVSLÖJANDET.
+- Sabotören spelar med sitt lag som vanligt men har en
   **SABOTAGE-KONSOL** på sin egen mobil (MEDLEM-läget) med digitala förmågor
   som drabbar **andra lags navigatörsenheter** i realtid.
 

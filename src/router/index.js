@@ -14,6 +14,7 @@ const routes = IS_APP
     ]
   : [
       { path: '/', name: 'Landing', component: () => import('../views/LandingView.vue') },
+      { path: '/integritetspolicy', name: 'Privacy', component: () => import('../views/PrivacyView.vue') },
       { path: '/admin', name: 'AdminDashboard', component: () => import('../views/AdminDashboard.vue') },
       { path: '/admin/results', name: 'AdminResults', component: () => import('../views/AdminResults.vue') },
       { path: '/:pathMatch(.*)*', redirect: '/' },

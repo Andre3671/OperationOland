@@ -53,6 +53,8 @@
         <span>NIVÅ: HEMLIG</span>
         <span>{{ stamp }}</span>
       </div>
+
+      <router-link class="privacy-link" to="/integritetspolicy">integritetspolicy</router-link>
     </div>
   </div>
 </template>
@@ -256,4 +258,14 @@ const stamp = computed(() => {
   padding: 12px;
   font-size: 0.8rem;
 }
+
+.privacy-link {
+  display: inline-block;
+  font-size: 0.62rem;
+  letter-spacing: 0.14em;
+  color: #4a4a4a;
+  text-decoration: none;
+  transition: color 0.2s;
+}
+.privacy-link:hover { color: #00ccff; }
 </style>

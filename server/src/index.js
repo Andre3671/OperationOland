@@ -95,7 +95,6 @@ function defaultState() {
     chatMessages: [],
     isSimulationMode: false,
     isOperationActive: false,
-    walkingMode: false,
     operationStartTime: null, // ISO string when the operation officially starts
     meetingPointTime: null,   // ISO string when teams must be at the meeting point
     // Per-team clock start (ms epoch), stamped when the team's navigator first
@@ -134,15 +133,36 @@ function defaultState() {
 // `cost` = points deducted from the saboteur's OWN team's total score per
 // use (recorded on the log entry; scoring reads the log). Nastier effects
 // cost more — sabotage is a strategic tradeoff, not a free win.
+// `target: 'self'` abilities are aimed at the joker's OWN team; 'enemy' ones
+// at another team's navigator. Both draw from the same charges, the same
+// cooldown and the same point cost, so supporting your team and slowing
+// another are genuinely competing uses of one resource.
 const SABOTAGE_ABILITIES = {
-  'fake-target': { durationMs: 5 * 60_000, maxUses: 2, cost: 25 },     // FLYTTA MÅL
-  'screen-lock': { durationMs: 60_000, maxUses: 2, cost: 20 },         // LÅS SKÄRM
-  'compass-jam': { durationMs: 90_000, maxUses: 2, cost: 15 },         // KOMPASSTÖRNING
-  'fake-transmission': { durationMs: 45_000, maxUses: 2, cost: 10 },   // FALSK SÄNDNING
-  'static-noise': { durationMs: 45_000, maxUses: 2, cost: 10 },        // BILDSTÖRNING
+  'counter-measure': { target: 'self', durationMs: 5 * 60_000, maxUses: 2, cost: 20 }, // MOTMEDEL
+  'self-locate': { target: 'self', durationMs: 30_000, maxUses: 2, cost: 10 },         // EGEN POSITION
+  'recon': { target: 'self', durationMs: 60_000, maxUses: 2, cost: 15 },               // SPANING
+  'fake-target': { target: 'enemy', durationMs: 5 * 60_000, maxUses: 2, cost: 25 },    // FLYTTA MÅL
+  'screen-lock': { target: 'enemy', durationMs: 60_000, maxUses: 2, cost: 20 },        // LÅS SKÄRM
+  'compass-jam': { target: 'enemy', durationMs: 90_000, maxUses: 2, cost: 15 },        // KOMPASSTÖRNING
+  'fake-transmission': { target: 'enemy', durationMs: 45_000, maxUses: 2, cost: 10 },  // FALSK SÄNDNING
+  'static-noise': { target: 'enemy', durationMs: 45_000, maxUses: 2, cost: 10 },       // BILDSTÖRNING
 }
-// One global cooldown per saboteur across ALL abilities.
+// One global cooldown per joker across ALL abilities.
 const SABOTAGE_COOLDOWN_MS = 10 * 60_000
+
+// Abilities a joker casts on their own team. Used to tell a team's own boost
+// apart from an incoming attack when the stored effect predates `direction`.
+const SELF_TARGETED_TYPES = new Set(
+  Object.entries(SABOTAGE_ABILITIES).filter(([, a]) => a.target === 'self').map(([t]) => t)
+)
+
+// Is `teamKey` currently shielded by an active MOTMEDEL?
+function hasActiveShield(state, teamKey) {
+  const now = Date.now()
+  return (Array.isArray(state.sabotageEffects) ? state.sabotageEffects : []).some(
+    e => e && e.type === 'counter-measure' && e.targetTeam === teamKey && Number(e.expiresAt) > now
+  )
+}
 
 const FAKE_TRANSMISSION_MESSAGES = [
   'PRIO 1: Samtliga enheter — invänta ny order från högkvarteret. Avvakta på plats.',
@@ -159,8 +179,6 @@ function pruneExpiredEffects(next) {
   if (kept.length === next.sabotageEffects.length) return next
   return { ...next, sabotageEffects: kept }
 }
-
-const WALKING_RADIUS_M = 50
 
 const insertPhoto = db.prepare(`INSERT INTO photos (id, data, created_at) VALUES (?, ?, ?)
   ON CONFLICT(id) DO UPDATE SET data = excluded.data, created_at = excluded.created_at`)
@@ -535,7 +553,7 @@ function calcStatus(state, teamEntry) {
   for (const cp of state.checkpoints) {
     if ((cp.team || '').toLowerCase() !== teamEntry.team.toLowerCase()) continue
     const distM = haversine(latest, cp) * 1000
-    const triggerRadius = state.walkingMode ? WALKING_RADIUS_M : (cp.radius || 500)
+    const triggerRadius = cp.radius || 500
     if (distM <= triggerRadius) return 'Vid Checkpoint'
   }
   if (state.meetingPoint.lat != null) {
@@ -697,7 +715,7 @@ app.post('/api/admin/patch', requireAdmin, (req, res) => {
     'checkpoints', 'meetingPoint', 'globalStart', 'globalFinish',
     'idealRoadPaths', 'teams', 'teamProgress', 'teamCheating',
     'arrivalLog', 'chatMessages', 'isSimulationMode', 'isOperationActive',
-    'history', 'walkingMode', 'operationStartTime', 'meetingPointTime',
+    'history', 'operationStartTime', 'meetingPointTime',
     'teamStartTimes', 'teamRosters', 'mode', 'sabotageMissions',
     'sabotageEffects', 'sabotageLog',
   ]
@@ -1118,16 +1136,36 @@ app.post('/api/sabotage-ability', (req, res) => {
   const key = (req.body?.team || '').toString().toLowerCase()
   const name = (req.body?.name || '').toString().trim()
   const type = (req.body?.type || '').toString()
-  const targetKey = (req.body?.targetTeam || '').toString().toLowerCase()
   if (!state.teams[key]) return res.status(404).json({ error: 'laget finns inte' })
-  if (!state.teams[targetKey]?.enabled) return res.status(404).json({ error: 'mållaget finns inte' })
-  if (targetKey === key) return res.status(400).json({ error: 'du kan inte sabotera ditt eget lag' })
   const entry = findRosterEntry(state, key, name)
   if (!entry || entry.role !== 'sabotor') {
-    return res.status(403).json({ error: 'endast lagets sabotör kan använda sabotage-förmågor' })
+    return res.status(403).json({ error: 'endast lagets joker kan använda jokerförmågor' })
   }
   const ability = SABOTAGE_ABILITIES[type]
   if (!ability) return res.status(400).json({ error: 'okänd förmåga' })
+
+  // Self-targeted abilities always resolve onto the joker's own team — the
+  // client's targetTeam is ignored so a crafted request can't shield or scout
+  // for someone else.
+  const targetKey = ability.target === 'self'
+    ? key
+    : (req.body?.targetTeam || '').toString().toLowerCase()
+
+  if (ability.target === 'enemy') {
+    if (!state.teams[targetKey]?.enabled) return res.status(404).json({ error: 'mållaget finns inte' })
+    if (targetKey === key) return res.status(400).json({ error: 'den förmågan kan inte riktas mot ditt eget lag' })
+    // Shielded target: reject BEFORE spending anything. Burning the attacker's
+    // charge and starting their cooldown on a blocked hit would make MOTMEDEL
+    // an invisible way to drain a rival, which reads as unfair rather than
+    // tactical. They do learn the shield exists — that information is the
+    // consolation, and it's worth something.
+    if (hasActiveShield(state, targetKey)) {
+      return res.status(409).json({
+        error: 'målet är skyddat av ett motmedel just nu — ingen laddning förbrukades',
+        shielded: true,
+      })
+    }
+  }
 
   const log = Array.isArray(state.sabotageLog) ? state.sabotageLog : []
   const usedOfType = log.filter(e => e.byTeam === key && e.type === type).length
@@ -1170,23 +1208,47 @@ app.post('/api/sabotage-ability', (req, res) => {
   const effect = {
     id: `fx-${now}-${Math.random().toString(36).slice(2, 7)}`,
     type,
+    // Kept on the effect so clients and the admin log can tell a supportive
+    // use from an offensive one without consulting the catalog.
+    direction: ability.target,
     targetTeam: targetKey,
     byTeam: key,
     params,
     createdAt: now,
     expiresAt: now + ability.durationMs,
   }
+
+  let effects = Array.isArray(state.sabotageEffects) ? state.sabotageEffects : []
+  // MOTMEDEL doesn't just block what comes next — it clears what's already
+  // landed on us. Without this, spending 20 points while under FLYTTA MÅL
+  // would feel like it did nothing for five minutes.
+  //
+  // Only HOSTILE effects are cleared. The first version dropped everything
+  // aimed at our own team, which also wiped the team's own running SPANING or
+  // EGEN POSITION — 15 points deleted by spending another 20.
+  if (type === 'counter-measure') {
+    effects = effects.filter(e => {
+      if (!e || e.targetTeam !== key) return true
+      const selfCast = e.direction === 'self' || SELF_TARGETED_TYPES.has(e.type)
+      return selfCast
+    })
+  }
+
   // cost comes from the server-side catalog — never from the client.
-  const logEntry = { id: effect.id, type, byTeam: key, byName: entry.name, targetTeam: targetKey, at: now, cost: ability.cost }
+  const logEntry = {
+    id: effect.id, type, direction: ability.target,
+    byTeam: key, byName: entry.name, targetTeam: targetKey,
+    at: now, cost: ability.cost,
+  }
   const next = {
     ...state,
-    sabotageEffects: [...(Array.isArray(state.sabotageEffects) ? state.sabotageEffects : []), effect],
+    sabotageEffects: [...effects, effect],
     sabotageLog: [...log, logEntry].slice(-200),
   }
   commitOp(ctx.op.id, next)
   res.json({
     ok: true,
-    effect: { id: effect.id, type, targetTeam: targetKey, expiresAt: effect.expiresAt },
+    effect: { id: effect.id, type, direction: ability.target, targetTeam: targetKey, expiresAt: effect.expiresAt },
     chargesLeft: ability.maxUses - usedOfType - 1,
     cooldownUntil: now + SABOTAGE_COOLDOWN_MS,
     cost: ability.cost,

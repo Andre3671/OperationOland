@@ -1,5 +1,5 @@
 import { ref, onMounted, onUnmounted, watch, toValue } from 'vue'
-import { useSimulationStore, WALKING_RADIUS_M } from '../store/simulationStore'
+import { useSimulationStore } from '../store/simulationStore'
 
 // `enabledSource` (optional): when false the composable never starts GPS
 // tracking at all — used by member devices (no GPS binding, no permission
@@ -10,7 +10,7 @@ export function useGeofencing(checkpoints, activeIndex, teamNameSource, enabledS
   const distanceToTarget = ref(null)
   // null = fine / not yet known, otherwise a short code the UI can show.
   const gpsError = ref(null)
-  const { isSimulationMode, isOperationActive, walkingMode, history, updateTeamPosition, recordCheckpointArrival } = useSimulationStore()
+  const { isSimulationMode, isOperationActive, history, updateTeamPosition, recordCheckpointArrival } = useSimulationStore()
   let watchId = null
   let restartTimer = null
   let triggeredCheckpointKey = null
@@ -49,15 +49,14 @@ export function useGeofencing(checkpoints, activeIndex, teamNameSource, enabledS
 
     if (isOverlayActive.value && triggeredCheckpointKey === checkpointKey) return
 
-    const triggerRadius = walkingMode.value ? WALKING_RADIUS_M : (currentCp.radius || 500)
+    const triggerRadius = currentCp.radius || 500
 
     // Don't let a wildly-imprecise fix trip the arrival. Triggering opens a
     // modal that hides the map and can only be cleared by confirming (which
     // ADVANCES progress), so a false positive forces the team to wrongly skip
     // ahead. A fix whose accuracy is far larger than the trigger radius can't
-    // be trusted to mean "we're really here" — especially in walking mode
-    // (50 m radius vs. typical 20-60 m phone accuracy). Distance is still
-    // updated above so the HUD keeps counting down.
+    // be trusted to mean "we're really here". Distance is still updated above
+    // so the HUD keeps counting down.
     const fixTooImprecise = Number.isFinite(accuracy) && accuracy > triggerRadius * 1.5
 
     // Arrivals only count while the operation is live — otherwise teams
@@ -86,7 +85,7 @@ export function useGeofencing(checkpoints, activeIndex, teamNameSource, enabledS
       const sinceMs = now - lastSentPosition.at
       if (sinceMs < POSITION_MIN_INTERVAL_MS) return
       const movedM = haversineDistance(lastSentPosition.lat, lastSentPosition.lng, lat, lng)
-      const minMoveM = walkingMode.value ? 10 : 25
+      const minMoveM = 25
       if (movedM < minMoveM && sinceMs < POSITION_HEARTBEAT_MS) return
     }
     lastSentPosition = { lat, lng, at: now }

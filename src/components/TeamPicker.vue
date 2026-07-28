@@ -79,7 +79,7 @@ async function submit() {
 <style scoped>
 .team-claim-overlay {
   background: rgba(0, 0, 0, 0.85);
-  color: #00ccff;
+  color: var(--primary);
   z-index: 2100;
   gap: 16px;
 }
@@ -93,7 +93,7 @@ async function submit() {
 }
 
 .claim-sub {
-  color: #888;
+  color: var(--text-2);
   max-width: 360px;
   text-align: center;
   margin: 0;
@@ -110,8 +110,8 @@ async function submit() {
 
 .claim-input {
   background: rgba(0, 0, 0, 0.6);
-  border: 1px solid #00ccff;
-  color: #fff;
+  border: 1px solid var(--primary);
+  color: var(--text);
   font-family: inherit;
   font-size: 1.15rem;
   letter-spacing: 0.1em;
@@ -120,16 +120,16 @@ async function submit() {
   text-align: center;
   text-transform: uppercase;
   outline: none;
-  box-shadow: 0 0 14px rgba(0, 204, 255, 0.18);
+  box-shadow: 0 0 14px color-mix(in srgb, var(--primary) 18%, transparent);
 }
 
 .claim-input:focus {
   border-color: #fff;
-  box-shadow: 0 0 18px rgba(0, 204, 255, 0.45);
+  box-shadow: 0 0 18px color-mix(in srgb, var(--primary) 18%, transparent);
 }
 
 .claim-submit {
-  background: #00ccff;
+  background: var(--primary);
   color: #000;
   border: none;
   padding: 14px 20px;
@@ -140,8 +140,8 @@ async function submit() {
 }
 
 .claim-submit:disabled {
-  background: #333;
-  color: #888;
+  background: var(--surface-3);
+  color: var(--text-2);
   cursor: not-allowed;
 }
 
@@ -156,7 +156,7 @@ async function submit() {
 }
 
 .claim-meta {
-  color: #555;
+  color: var(--text-3);
   font-size: 0.75rem;
   letter-spacing: 0.15em;
   text-transform: uppercase;

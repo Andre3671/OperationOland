@@ -3,10 +3,6 @@
     <div v-if="active" class="modal-backdrop">
       <div class="modal-content" :class="overlayTheme">
         <!-- Decorative Corners -->
-        <div class="corner top-left"></div>
-        <div class="corner top-right"></div>
-        <div class="corner bottom-left"></div>
-        <div class="corner bottom-right"></div>
 
         <!-- Header -->
         <div class="modal-header">
@@ -467,7 +463,7 @@ onUnmounted(() => {
 .modal-content {
   position: relative;
   width: 100%;
-  max-width: 500px;
+  max-width: var(--panel-max);
   /* Never taller than the screen (backdrop has 20px padding top+bottom). A long
      challenge + photo preview used to overflow with overflow:hidden, clipping
      the continue button off the bottom — now the modal scrolls instead. */
@@ -475,11 +471,12 @@ onUnmounted(() => {
   max-height: calc(100dvh - 40px);
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
-  background: #0a0a0a;
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: var(--bg);
+  border: 1px solid var(--border);
   padding: 40px;
-  box-shadow: 0 0 50px rgba(0, 0, 0, 0.5);
-  font-family: 'JetBrains Mono', 'Courier New', monospace;
+  box-shadow: var(--shadow-lg);
+  font-family: 'JetBrains Mono', var(--font-mono);
+  border-radius: var(--r-xl);
 }
 
 /* Tighter padding on phones so the content fits without much scrolling. */
@@ -493,20 +490,20 @@ onUnmounted(() => {
 
 /* Themes */
 .theme-green {
-  border-left: 4px solid #00ff00;
-  color: #00ff00;
+  border-left: 4px solid var(--primary);
+  color: var(--text);
 }
-.theme-green .mission-divider { background: linear-gradient(90deg, #00ff00, transparent); }
+.theme-green .mission-divider { background: linear-gradient(90deg, var(--c-lime), transparent); }
 
 .theme-yellow {
   border-left: 4px solid #ffcc00;
-  color: #ffcc00;
+  color: var(--c-amber);
 }
 .theme-yellow .mission-divider { background: linear-gradient(90deg, #ffcc00, transparent); }
 
 .theme-cyan {
-  border-left: 4px solid #00ccff;
-  color: #00ccff;
+  border-left: 4px solid var(--primary);
+  color: var(--primary);
 }
 .theme-cyan .mission-divider { background: linear-gradient(90deg, #00ccff, transparent); }
 
@@ -517,17 +514,8 @@ onUnmounted(() => {
 .theme-red .mission-divider { background: linear-gradient(90deg, #ff5566, transparent); }
 
 /* Corners */
-.corner {
-  position: absolute;
-  width: 15px;
-  height: 15px;
-  border: 2px solid currentColor;
-  opacity: 0.5;
-}
-.top-left { top: 10px; left: 10px; border-right: none; border-bottom: none; }
-.top-right { top: 10px; right: 10px; border-left: none; border-bottom: none; }
-.bottom-left { bottom: 10px; left: 10px; border-right: none; border-top: none; }
-.bottom-right { bottom: 10px; right: 10px; border-left: none; border-top: none; }
+.corner { display: none; }
+
 
 .modal-header {
   display: flex;
@@ -568,11 +556,11 @@ onUnmounted(() => {
 }
 
 .cp-arrive-clock {
-  font-family: 'JetBrains Mono', monospace;
+  font-family: var(--font-mono);
   font-size: 0.85rem;
   font-weight: 700;
   letter-spacing: 0.1em;
-  color: #ffcc00;
+  color: var(--c-amber);
   margin-top: -12px;
   margin-bottom: 16px;
   font-variant-numeric: tabular-nums;
@@ -607,7 +595,7 @@ onUnmounted(() => {
   font-size: 1.1rem;
   line-height: 1.5;
   margin-bottom: 40px;
-  color: #eee;
+  color: var(--text);
 }
 
 .action-btn {
@@ -656,15 +644,15 @@ onUnmounted(() => {
 }
 
 .pause-copy {
-  color: #eee;
+  color: var(--text);
   font-size: 0.95rem;
   line-height: 1.5;
 }
 
 /* Explore mode: relaxed info box instead of mission gating. */
 .explore-note {
-  background: rgba(0, 204, 255, 0.07);
-  border: 1px dashed rgba(0, 204, 255, 0.35);
+  background: color-mix(in srgb, var(--primary) 18%, transparent);
+  border: 1px dashed color-mix(in srgb, var(--primary) 18%, transparent);
   color: #cfeefb;
   width: 100%;
   box-sizing: border-box;
@@ -706,7 +694,7 @@ onUnmounted(() => {
 }
 
 .photo-error {
-  color: #ff6666;
+  color: var(--c-rose);
   font-size: 0.75rem;
   text-align: left;
 }
@@ -751,7 +739,7 @@ onUnmounted(() => {
 
 .blink {
   animation: blink 1s infinite;
-  color: #ff3333;
+  color: var(--c-rose);
 }
 
 @keyframes blink {

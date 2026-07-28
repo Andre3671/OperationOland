@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Operation Roadtrip — Landing (mockup)</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  /* ---- Design tokens (soft, rounded, bright) ---- */
+  --r-sm: 10px;
+  --r-md: 16px;
+  --r-lg: 24px;
+  --r-pill: 999px;
+
+  --c-cyan:  #38bdf8;
+  --c-violet:#a78bfa;
+  --c-lime:  #4ade80;
+  --c-amber: #fbbf24;
+  --c-rose:  #fb7185;
+
+  --shadow-sm: 0 2px 8px rgba(8,15,35,.06);
+  --shadow-md: 0 8px 28px rgba(8,15,35,.10);
+  --shadow-lg: 0 20px 50px rgba(8,15,35,.16);
+  --font: 'Inter', system-ui, sans-serif;
+  --mono: 'JetBrains Mono', ui-monospace, monospace;
+}
+
+/* LIGHT (default) */
+body[data-theme="light"]{
+  --bg:        #eef2fb;
+  --bg-accent: radial-gradient(1200px 600px at 15% -10%, #dbeafe 0%, transparent 60%),
+               radial-gradient(900px 500px at 95% 10%, #ede9fe 0%, transparent 55%);
+  --surface:   #ffffff;
+  --surface-2: #f6f8fd;
+  --border:    #e4e9f4;
+  --text:      #16203a;
+  --text-2:    #5a6785;
+  --text-3:    #93a0bb;
+  --primary:   #4f7cff;
+  --primary-soft: #e8efff;
+  --on-primary:#ffffff;
+}
+/* DARK */
+body[data-theme="dark"]{
+  --bg:        #0f1424;
+  --bg-accent: radial-gradient(1200px 600px at 15% -10%, #1c2a55 0%, transparent 60%),
+               radial-gradient(900px 500px at 95% 10%, #2a2050 0%, transparent 55%);
+  --surface:   #181f36;
+  --surface-2: #131a2e;
+  --border:    #27304d;
+  --text:      #eef2ff;
+  --text-2:    #a3aecb;
+  --text-3:    #6b779a;
+  --primary:   #6d94ff;
+  --primary-soft: #223055;
+  --on-primary:#0b1020;
+  --shadow-md: 0 8px 28px rgba(0,0,0,.45);
+  --shadow-lg: 0 20px 50px rgba(0,0,0,.55);
+}
+
+*{box-sizing:border-box}
+body{
+  margin:0; min-height:100vh;
+  font-family:var(--font);
+  background:var(--bg-accent), var(--bg);
+  color:var(--text);
+  -webkit-font-smoothing:antialiased;
+  transition:background .3s, color .3s;
+}
+
+/* theme switch (mockup only) */
+.theme-switch{
+  position:fixed; top:16px; right:16px; z-index:50;
+  display:flex; gap:4px; padding:4px;
+  background:var(--surface); border:1px solid var(--border);
+  border-radius:var(--r-pill); box-shadow:var(--shadow-md);
+}
+.theme-switch button{
+  border:0; background:transparent; color:var(--text-2);
+  font-family:var(--font); font-size:12px; font-weight:600;
+  padding:7px 14px; border-radius:var(--r-pill); cursor:pointer;
+}
+.theme-switch button.on{ background:var(--primary); color:var(--on-primary); }
+
+.wrap{ max-width:980px; margin:0 auto; padding:80px 20px 60px; }
+
+/* ---------- HERO ---------- */
+.badge{
+  display:inline-flex; align-items:center; gap:8px;
+  background:var(--surface); border:1px solid var(--border);
+  border-radius:var(--r-pill); padding:8px 16px 8px 12px;
+  font-size:12.5px; font-weight:600; color:var(--text-2);
+  box-shadow:var(--shadow-sm); margin-bottom:26px;
+}
+.dot{ width:8px;height:8px;border-radius:50%; background:var(--c-lime);
+  box-shadow:0 0 0 4px color-mix(in srgb, var(--c-lime) 22%, transparent);
+  animation:blip 1.8s ease-in-out infinite; }
+@keyframes blip{0%,100%{opacity:.55;transform:scale(.9)}50%{opacity:1;transform:scale(1.15)}}
+
+h1{
+  font-size:clamp(2.6rem,7vw,4.4rem); line-height:1.02;
+  font-weight:900; letter-spacing:-.035em; margin:0 0 20px;
+}
+h1 .grad{
+  background:linear-gradient(100deg,var(--primary),var(--c-violet) 55%,var(--c-cyan));
+  -webkit-background-clip:text; background-clip:text; color:transparent;
+}
+.lede{
+  font-size:clamp(1rem,2.2vw,1.2rem); line-height:1.6; color:var(--text-2);
+  max-width:560px; margin:0 0 34px;
+}
+
+.cta-row{ display:flex; flex-wrap:wrap; gap:12px; margin-bottom:16px; }
+.btn{
+  display:inline-flex; align-items:center; gap:10px;
+  border:0; cursor:pointer; text-decoration:none;
+  font-family:var(--font); font-size:15px; font-weight:700;
+  padding:16px 28px; border-radius:var(--r-pill);
+  transition:transform .15s ease, box-shadow .2s ease, background .2s;
+}
+.btn:active{ transform:scale(.97) }
+.btn-primary{
+  background:linear-gradient(135deg,var(--primary),var(--c-violet));
+  color:#fff; box-shadow:0 10px 24px color-mix(in srgb,var(--primary) 38%,transparent);
+}
+.btn-primary:hover{ box-shadow:0 14px 32px color-mix(in srgb,var(--primary) 50%,transparent); transform:translateY(-2px) }
+.btn-ghost{
+  background:var(--surface); color:var(--text);
+  border:1px solid var(--border); box-shadow:var(--shadow-sm);
+}
+.btn-ghost:hover{ background:var(--surface-2); transform:translateY(-2px) }
+.cta-note{ font-size:12.5px; color:var(--text-3); margin:0 0 60px; }
+
+/* ---------- HOW IT WORKS ---------- */
+.section-label{
+  font-family:var(--mono); font-size:11px; font-weight:700; letter-spacing:.18em;
+  text-transform:uppercase; color:var(--text-3); margin:0 0 8px;
+}
+h2{ font-size:clamp(1.5rem,3.5vw,2rem); font-weight:800; letter-spacing:-.02em; margin:0 0 28px; }
+
+.steps{ display:grid; grid-template-columns:repeat(auto-fit,minmax(230px,1fr)); gap:16px; margin-bottom:64px; }
+.step{
+  background:var(--surface); border:1px solid var(--border);
+  border-radius:var(--r-lg); padding:24px; box-shadow:var(--shadow-sm);
+  transition:transform .2s, box-shadow .2s;
+}
+.step:hover{ transform:translateY(-4px); box-shadow:var(--shadow-md) }
+.step-ico{
+  width:48px;height:48px;border-radius:var(--r-md);
+  display:grid;place-items:center; font-size:22px; margin-bottom:16px;
+}
+.i-cyan  { background:color-mix(in srgb,var(--c-cyan)   16%,transparent) }
+.i-violet{ background:color-mix(in srgb,var(--c-violet) 16%,transparent) }
+.i-lime  { background:color-mix(in srgb,var(--c-lime)   18%,transparent) }
+.i-amber { background:color-mix(in srgb,var(--c-amber)  18%,transparent) }
+.step h3{ font-size:1rem; font-weight:700; margin:0 0 6px; }
+.step p{ font-size:.875rem; line-height:1.55; color:var(--text-2); margin:0; }
+.step-n{
+  font-family:var(--mono); font-size:11px; font-weight:700; color:var(--text-3);
+  display:block; margin-bottom:10px;
+}
+
+/* ---------- MODE CARDS ---------- */
+.modes{ display:grid; grid-template-columns:repeat(auto-fit,minmax(280px,1fr)); gap:18px; margin-bottom:64px; }
+.mode{
+  position:relative; overflow:hidden;
+  border-radius:var(--r-lg); padding:30px 26px;
+  border:1px solid var(--border); background:var(--surface);
+  box-shadow:var(--shadow-md);
+}
+.mode::before{
+  content:''; position:absolute; inset:0 0 auto 0; height:4px;
+}
+.mode.game::before  { background:linear-gradient(90deg,var(--c-rose),var(--c-amber)); }
+.mode.explore::before{ background:linear-gradient(90deg,var(--c-lime),var(--c-cyan)); }
+.mode-tag{
+  display:inline-flex; align-items:center; gap:7px;
+  font-size:12px; font-weight:700; padding:6px 13px; border-radius:var(--r-pill);
+  margin-bottom:14px;
+}
+.mode.game .mode-tag   { background:color-mix(in srgb,var(--c-rose) 15%,transparent); color:var(--c-rose) }
+.mode.explore .mode-tag{ background:color-mix(in srgb,var(--c-lime) 18%,transparent); color:#16a34a }
+body[data-theme="dark"] .mode.explore .mode-tag{ color:var(--c-lime) }
+.mode h3{ font-size:1.3rem; font-weight:800; margin:0 0 10px; letter-spacing:-.02em }
+.mode p{ font-size:.9rem; line-height:1.6; color:var(--text-2); margin:0 0 18px }
+.mode ul{ list-style:none; padding:0; margin:0; display:grid; gap:9px }
+.mode li{ font-size:.85rem; color:var(--text-2); display:flex; gap:9px; align-items:flex-start }
+.mode li::before{ content:'✓'; color:var(--c-lime); font-weight:800; flex:none }
+
+/* ---------- ADMIN CTA ---------- */
+.admin-card{
+  border-radius:var(--r-lg); padding:36px;
+  background:linear-gradient(135deg,var(--primary),var(--c-violet));
+  color:#fff; box-shadow:var(--shadow-lg);
+  display:flex; flex-wrap:wrap; gap:24px; align-items:center; justify-content:space-between;
+  margin-bottom:48px;
+}
+.admin-card h2{ color:#fff; margin:0 0 8px; font-size:1.5rem }
+.admin-card p{ margin:0; opacity:.88; font-size:.9rem; line-height:1.55; max-width:420px }
+.btn-white{ background:#fff; color:var(--primary); box-shadow:0 8px 20px rgba(0,0,0,.18) }
+.btn-white:hover{ transform:translateY(-2px) }
+
+footer{
+  display:flex; flex-wrap:wrap; gap:14px; justify-content:space-between; align-items:center;
+  padding-top:26px; border-top:1px solid var(--border);
+  font-size:12.5px; color:var(--text-3);
+}
+footer a{ color:var(--text-3); text-decoration:none }
+footer a:hover{ color:var(--primary) }
+.freq{ font-family:var(--mono); font-size:11px; letter-spacing:.08em }
+</style>
+</head>
+<body data-theme="light">
+
+<div class="theme-switch">
+  <button class="on" onclick="setT('light',this)">☀︎ Ljust</button>
+  <button onclick="setT('dark',this)">☾ Mörkt</button>
+</div>
+
+<div class="wrap">
+
+  <div class="badge"><span class="dot"></span> Signal aktiv · 4 lag i fält just nu</div>
+
+  <h1>Ett hemligt fältuppdrag<br><span class="grad">för dig och ditt lag.</span></h1>
+
+  <p class="lede">
+    Kompass, karta och klassificerade mål. Spelet spelas på riktigt ute i verkligheten —
+    mobilen är er utrustning, vägen är er spelplan.
+  </p>
+
+  <div class="cta-row">
+    <a class="btn btn-primary" href="#">▶ Hämta på Google Play</a>
+    <a class="btn btn-ghost" href="#">Så funkar det</a>
+  </div>
+  <p class="cta-note">Länken kommer — appen är under granskning hos Google.</p>
+
+  <p class="section-label">// Så funkar det</p>
+  <h2>Fyra steg till avfärd</h2>
+  <div class="steps">
+    <div class="step">
+      <span class="step-n">STEG 01</span>
+      <div class="step-ico i-cyan">📱</div>
+      <h3>Ladda ner appen</h3>
+      <p>Alla i laget installerar appen. En mobil blir navigatör, resten är medlemmar.</p>
+    </div>
+    <div class="step">
+      <span class="step-n">STEG 02</span>
+      <div class="step-ico i-violet">🔑</div>
+      <h3>Ange koden</h3>
+      <p>Spelledaren delar en anslutningskod. Skriv in den så hamnar ni i rätt operation.</p>
+    </div>
+    <div class="step">
+      <span class="step-n">STEG 03</span>
+      <div class="step-ico i-amber">🎭</div>
+      <h3>Få din roll</h3>
+      <p>Agent eller joker? Jokern kan lyfta sitt eget lag — eller sabotera ett annat.</p>
+    </div>
+    <div class="step">
+      <span class="step-n">STEG 04</span>
+      <div class="step-ico i-lime">🧭</div>
+      <h3>Följ kompassen</h3>
+      <p>Inga vägbeskrivningar. Bara riktning, avstånd och er egen förmåga att hitta rätt.</p>
+    </div>
+  </div>
+
+  <p class="section-label">// Två spellägen</p>
+  <h2>Välj tempo för resan</h2>
+  <div class="modes">
+    <div class="mode game">
+      <span class="mode-tag">🎖 SPEL</span>
+      <h3>Full tävling</h3>
+      <p>Poängjakt, bildbevis och en joker i varje lag som kan avgöra matchen — åt något håll.</p>
+      <ul>
+        <li>Bildbevis krävs vid varje checkpoint</li>
+        <li>Fuskdetektering med rödlås och strafftid</li>
+        <li>Jokern stöttar: motmedel och spaning</li>
+        <li>Jokern stör: flytta mål, lås skärm, kompasstörning</li>
+        <li>Stora avslöjandet i mål</li>
+      </ul>
+    </div>
+    <div class="mode explore">
+      <span class="mode-tag">🌿 UTFORSKNING</span>
+      <h3>Avslappnad upptäcktsfärd</h3>
+      <p>Samma rutt och kompassnavigering — men utan tävlingsmoment eller press.</p>
+      <ul>
+        <li>Inga straff och ingen fuskdetektering</li>
+        <li>Er egen position syns på kartan</li>
+        <li>Checkpoints är infostopp om platsen</li>
+        <li>Foton är frivilliga minnesbilder</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="admin-card">
+    <div>
+      <h2>Är du spelledare?</h2>
+      <p>Planera en egen operation: bygg rutten på kartan, dela in lagen, utse jokrar och följ allt live.</p>
+    </div>
+    <a class="btn btn-white" href="#">Skapa operation →</a>
+  </div>
+
+  <footer>
+    <span class="freq">FREQ 142.6 MHz · NIVÅ: HEMLIG</span>
+    <span><a href="#">Integritetspolicy</a> · <a href="#">Kontakt</a></span>
+  </footer>
+
+</div>
+
+<script>
+function setT(t,el){
+  document.body.dataset.theme=t;
+  document.querySelectorAll('.theme-switch button').forEach(b=>b.classList.remove('on'));
+  el.classList.add('on');
+}
+</script>
+</body>
+</html>

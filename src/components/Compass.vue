@@ -305,7 +305,7 @@ onBeforeUnmount(() => {
   right: 0;
   margin-top: 2px;
   font-size: 8px;
-  font-family: 'JetBrains Mono', monospace;
+  font-family: var(--font-mono);
   color: #ff8800;
   letter-spacing: 0.05em;
   white-space: nowrap;
@@ -319,8 +319,8 @@ onBeforeUnmount(() => {
   right: 0;
   background: rgba(255, 51, 51, 0.15);
   border: 1px solid #ff3333;
-  color: #ff6666;
-  font-family: 'JetBrains Mono', monospace;
+  color: var(--c-rose);
+  font-family: var(--font-mono);
   font-size: 9px;
   font-weight: 700;
   letter-spacing: 0.08em;
@@ -339,8 +339,8 @@ onBeforeUnmount(() => {
   width: 220px;
   background: rgba(0, 0, 0, 0.92);
   border: 1px solid #ff3333;
-  color: #eee;
-  font-family: 'JetBrains Mono', monospace;
+  color: var(--text);
+  font-family: var(--font-mono);
   font-size: 10px;
   line-height: 1.4;
   padding: 8px;
@@ -350,6 +350,6 @@ onBeforeUnmount(() => {
 }
 
 .compass-help b {
-  color: #ffcc00;
+  color: var(--c-amber);
 }
 </style>

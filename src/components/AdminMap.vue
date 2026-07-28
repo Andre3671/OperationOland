@@ -4,6 +4,9 @@
     <button class="layer-toggle" @click="cycleLayer" :title="`Karta: ${currentLayer.label}`">
       {{ currentLayer.short }}
     </button>
+    <button class="recenter-btn" @click="recenter" title="Centrera kartan på operationen">
+      ⌖
+    </button>
   </div>
 </template>
 
@@ -14,13 +17,19 @@ import { SLOT_KEYS, colorForTeam } from '../lib/teamSlots'
 import { useSimulationStore } from '../store/simulationStore'
 
 const props = defineProps({
+  // Changing this re-frames the camera once. Switching to an operation on the
+  // other side of the world should not leave the admin staring at the old one.
+  operationId: { type: [String, Number], default: null },
   idealRoutes: { type: Array, default: () => [] },
   actualRoutes: { type: Array, default: () => [] },
   livePoints: { type: Array, default: () => [] },
   checkpoints: { type: Array, default: () => [] },
-  meetingPoint: { type: Object, default: () => ({ lat: 56.85, lng: 16.68, name: 'Meeting Point' }) },
-  globalStart: { type: Object, default: () => ({ lat: 56.6635, lng: 16.3562, name: 'Start' }) },
-  globalFinish: { type: Object, default: () => ({ lat: 57.3562, lng: 17.1123, name: 'Finish' }) }
+  // Empty by default — a brand new operation has no start/finish/meeting point
+  // yet and must not have Öland silently planted on the map. Every read below
+  // is guarded on `.lat`, so `{}` behaves as "not set".
+  meetingPoint: { type: Object, default: () => ({}) },
+  globalStart: { type: Object, default: () => ({}) },
+  globalFinish: { type: Object, default: () => ({}) }
 })
 
 const { teams } = useSimulationStore()
@@ -49,6 +58,7 @@ let axisLayer = null
 let axisLineLayer = null
 let startMarker = null
 let finishMarker = null
+let sizeTimer = null
 
 function cycleLayer() {
   layerIndex.value = (layerIndex.value + 1) % TILE_LAYERS.length
@@ -61,10 +71,77 @@ function applyTileLayer() {
   tileLayer = L.tileLayer(currentLayer.value.url, { maxZoom: 19, attribution: currentLayer.value.attribution }).addTo(map)
 }
 
+// The camera used to be hardcoded to Öland (center [56.82, 16.64], zoom 11), so
+// every reload snapped the admin back to Öland no matter where the operation
+// actually was. Now: restore the view this admin last used, otherwise open on a
+// wide view and let fitToContent() frame the real operation once data arrives.
+const VIEW_KEY = 'oo-admin-map-view'
+const WORLD_VIEW = { center: [20, 0], zoom: 2 }
+
+function loadSavedView() {
+  try {
+    const v = JSON.parse(localStorage.getItem(VIEW_KEY) || 'null')
+    if (v && Number.isFinite(v.lat) && Number.isFinite(v.lng) && Number.isFinite(v.zoom)) {
+      return { center: [v.lat, v.lng], zoom: v.zoom }
+    }
+  } catch (_) { /* ignore corrupt cache */ }
+  return null
+}
+
+function saveView() {
+  if (!map) return
+  try {
+    const c = map.getCenter()
+    localStorage.setItem(VIEW_KEY, JSON.stringify({ lat: c.lat, lng: c.lng, zoom: map.getZoom() }))
+  } catch (_) { /* storage full / private mode */ }
+}
+
+// Collect every real coordinate the operation knows about.
+function contentBounds() {
+  const pts = []
+  const push = (p) => {
+    if (p && Number.isFinite(p.lat) && Number.isFinite(p.lng)) pts.push([p.lat, p.lng])
+  }
+  push(props.globalStart)
+  push(props.globalFinish)
+  push(props.meetingPoint)
+  for (const cp of props.checkpoints) push(cp)
+  // Same shape drawRoutes() uses: each ideal route carries a `path` of [lat,lng].
+  for (const route of props.idealRoutes) {
+    if (!Array.isArray(route?.path)) continue
+    for (const c of route.path) {
+      if (Array.isArray(c) && Number.isFinite(c[0]) && Number.isFinite(c[1])) pts.push(c)
+    }
+  }
+  return pts.length ? L.latLngBounds(pts) : null
+}
+
+// Frame the operation ONCE. After that the admin owns the camera — panning and
+// zooming are never overridden, which is why the original fitBounds was removed.
+let hasFramed = false
+function fitToContent() {
+  if (hasFramed || !map) return
+  const bounds = contentBounds()
+  if (!bounds || !bounds.isValid()) return
+  hasFramed = true
+  map.fitBounds(bounds, { padding: [60, 60], maxZoom: 14 })
+  saveView()
+}
+
+// Manual "take me back to the operation" — always allowed, ignores hasFramed.
+function recenter() {
+  hasFramed = false
+  fitToContent()
+}
+
 function createMap() {
+  const saved = loadSavedView()
+  const view = saved || WORLD_VIEW
+  // A restored view is the admin's own choice — don't override it with fitBounds.
+  hasFramed = !!saved
   map = L.map(mapId, {
-    center: [56.82, 16.64],
-    zoom: 11,
+    center: view.center,
+    zoom: view.zoom,
     dragging: true,
     touchZoom: true,
     doubleClickZoom: true,
@@ -85,6 +162,7 @@ function createMap() {
   map.on('click', (e) => {
     emit('map-click', e.latlng)
   })
+  map.on('moveend zoomend', saveView)
 }
 
 function syncAxisMarkers() {
@@ -108,7 +186,7 @@ function syncAxisMarkers() {
     riseOnHover: true,
     icon: L.divIcon({
       className: 'axis-icon start',
-      html: '<div style="background: #00ff00; width: 18px; height: 18px; border-radius: 3px; border: 2px solid #fff; cursor: grab; box-shadow: 0 0 8px rgba(0,255,0,0.85);"></div>',
+      html: '<div style="background: #4ade80; width: 18px; height: 18px; border-radius: 3px; border: 2px solid #fff; cursor: grab; box-shadow: 0 2px 8px rgba(0,0,0,0.35);"></div>',
       iconSize: [22, 22],
       iconAnchor: [11, 11]
     })
@@ -266,7 +344,9 @@ function drawRoutes() {
     marker.addTo(meetingPointLayer)
   }
 
-  // Note: Removed automatic map.fitBounds() to allow Admin free panning/zooming.
+  // Frames the operation on first load only; afterwards the admin's own
+  // panning and zooming is never overridden.
+  fitToContent()
 }
 
 watch(
@@ -285,15 +365,31 @@ watch(
   { deep: true }
 )
 
+// New operation selected → allow exactly one automatic re-frame.
+watch(() => props.operationId, () => {
+  hasFramed = false
+  fitToContent()
+})
+
 onMounted(async () => {
   await nextTick()
   createMap()
   syncAxisMarkers()
   drawRoutes()
-  setTimeout(() => map.invalidateSize(), 250)
+  // Guarded and tracked: onBeforeUnmount nulls `map`, so an unmount inside
+  // this 250 ms window (route change, v-if flip) used to throw
+  // "Cannot read properties of null (reading 'invalidateSize')".
+  sizeTimer = setTimeout(() => {
+    sizeTimer = null
+    if (map) map.invalidateSize()
+  }, 250)
 })
 
 onBeforeUnmount(() => {
+  if (sizeTimer) {
+    clearTimeout(sizeTimer)
+    sizeTimer = null
+  }
   if (map) {
     map.remove()
     map = null
@@ -321,6 +417,24 @@ onBeforeUnmount(() => {
   padding: 6px 10px;
   cursor: pointer;
   border-radius: 3px;
+}
+.recenter-btn {
+  position: absolute;
+  top: 108px;
+  left: 12px;
+  z-index: 1400;
+  background: rgba(0, 0, 0, 0.85);
+  border: 1px solid rgba(0, 204, 255, 0.45);
+  color: #00ccff;
+  font-size: 0.95rem;
+  line-height: 1;
+  padding: 6px 10px;
+  cursor: pointer;
+  border-radius: 3px;
+}
+.recenter-btn:hover {
+  background: rgba(0, 0, 0, 0.95);
+  border-color: #00ccff;
 }
 .layer-toggle:hover {
   background: rgba(0, 0, 0, 0.95);

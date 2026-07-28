@@ -90,9 +90,9 @@
 <style scoped>
 .privacy {
   min-height: 100vh;
-  background: #0a0a0a;
+  background: var(--bg);
   color: #d0d0d0;
-  font-family: 'JetBrains Mono', 'Courier New', monospace;
+  font-family: var(--font-mono);
   padding: 32px 20px 60px;
 }
 
@@ -105,7 +105,7 @@
 
 .back-link {
   display: inline-block;
-  color: #00ccff;
+  color: var(--primary);
   text-decoration: none;
   font-size: 0.75rem;
   letter-spacing: 0.14em;
@@ -115,7 +115,7 @@
 .back-link:hover { opacity: 1; }
 
 h1 {
-  color: #00ccff;
+  color: var(--primary);
   font-size: 1.3rem;
   letter-spacing: 0.06em;
   margin: 0 0 6px;
@@ -123,12 +123,12 @@ h1 {
 
 .updated {
   font-size: 0.7rem;
-  color: #666;
+  color: var(--text-3);
   margin: 0 0 24px;
 }
 
 h2 {
-  color: #00ccff;
+  color: var(--primary);
   font-size: 0.95rem;
   letter-spacing: 0.08em;
   margin: 28px 0 8px;

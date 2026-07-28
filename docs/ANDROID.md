@@ -38,11 +38,14 @@ npm run android:open   # öppnar android/ i Android Studio
 Kör appen på telefon via Android Studio (Run ▶) med USB-felsökning, eller
 bygg en debug-APK direkt:
 
-```bash
+```powershell
 cd android
-gradlew assembleDebug
+.\gradlew assembleDebug
 # APK: android/app/build/outputs/apk/debug/app-debug.apk
 ```
+
+> `.\` krävs i PowerShell — den kör inte program från aktuell katalog utan
+> explicit sökväg. I cmd fungerar `gradlew` utan prefix.
 
 ## Hur appen pratar med servern (VIKTIGT)
 
@@ -77,6 +80,41 @@ samtidigt hos olika spelledare. Koden sparas i localStorage
 den. En delad länk med `?code=XXXXXX` förifyller koden. Alla API-anrop
 och WebSocketen (`/api/sync?code=...`) skickar koden automatiskt.
 Detaljer: se `docs/ACCOUNTS.md`. **Kräver omdeployad server.**
+
+## Ikoner
+
+Källan är `resources/icon.svg` + de två lagren för adaptiva ikoner. Rastret
+genereras med Pillow (ImageMagick här saknar librsvg och kraschar på
+gradienterna):
+
+```powershell
+python scripts\icons.py                    # resources/*.png + public/*
+npx @capacitor/assets generate --android    # -> android/.../mipmap-*
+```
+
+### Efter varje `assets generate`: återställ XML:en
+
+`@capacitor/assets` skriver `mipmap-anydpi-v26/ic_launcher.xml` och
+`ic_launcher_round.xml` med `inset="16.7%"` på **båda** lagren. Bakgrunden ska
+inte ha inset — lagren är 108dp, masken visar de inre 72dp, och de yttre 18dp
+används av launcherns tryck- och parallaxanimationer. En insatt bakgrund täcker
+exakt 72dp, så animationerna blottar transparenta hörn.
+
+Efter generering, ändra tillbaka båda filerna till:
+
+```xml
+<background android:drawable="@mipmap/ic_launcher_background" />
+<foreground>
+    <inset android:drawable="@mipmap/ic_launcher_foreground" android:inset="16.7%" />
+</foreground>
+```
+
+### Varför förgrunden inte är nedskalad i källan
+
+`FOREGROUND_SCALE` i `scripts/icons.py` är 1.14, alltså större än
+motivet i `icon.png`. Det ser fel ut men är rätt: Androids egen inset krymper
+lagret till 66,6 %. Skalar man ner motivet i källan också krymps det två gånger
+och nålen hamnar på 33 % av ikonen. 1.14 landar på ~60 % efter insetten.
 
 ## Behörigheter
 
@@ -170,14 +208,17 @@ Lägg även till `keystore.properties` i `.gitignore`.
 
 ### 3. Bygg AAB:n
 
-```bash
+```powershell
 npm run android:sync        # färsk app-build + sync
 cd android
-gradlew bundleRelease
+.\gradlew bundleRelease
 # AAB: android/app/build/outputs/bundle/release/app-release.aab
 ```
 
-(Signerad APK: `gradlew assembleRelease` — men Play kräver AAB.)
+(Signerad APK: `.\gradlew assembleRelease` — men Play kräver AAB.)
+
+Glöm inte att höja `versionCode` i `android/app/build.gradle` före varje
+uppladdning — Play avvisar en AAB med samma versionCode som en tidigare.
 
 ### 4. Ladda upp till Google Play Console
 

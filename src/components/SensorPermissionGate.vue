@@ -1,10 +1,6 @@
 <template>
   <div class="gate-overlay">
     <div class="gate-frame">
-      <div class="corner top-left"></div>
-      <div class="corner top-right"></div>
-      <div class="corner bottom-left"></div>
-      <div class="corner bottom-right"></div>
 
       <div class="gate-status">
         <span class="status-dot" :class="dotClass"></span>
@@ -211,13 +207,13 @@ onBeforeUnmount(() => {
 .gate-overlay {
   position: fixed;
   inset: 0;
-  background: #0a0a0a;
+  background: var(--bg);
   display: flex;
   align-items: center;
   justify-content: safe center;
   z-index: 2050;
-  font-family: 'JetBrains Mono', 'Courier New', monospace;
-  color: #00ccff;
+  font-family: 'JetBrains Mono', var(--font-mono);
+  color: var(--primary);
   padding: 20px;
   overflow: auto;
 }
@@ -228,8 +224,8 @@ onBeforeUnmount(() => {
   inset: 0;
   background: repeating-linear-gradient(
     0deg,
-    rgba(0, 204, 255, 0.025) 0px,
-    rgba(0, 204, 255, 0.025) 1px,
+    color-mix(in srgb, var(--primary) 18%, transparent) 0px,
+    color-mix(in srgb, var(--primary) 18%, transparent) 1px,
     transparent 1px,
     transparent 3px
   );
@@ -239,24 +235,16 @@ onBeforeUnmount(() => {
 .gate-frame {
   position: relative;
   width: 100%;
-  max-width: 460px;
+  max-width: var(--panel-max);
   padding: 32px 26px;
-  background: rgba(0, 0, 0, 0.9);
-  border: 1px solid rgba(0, 204, 255, 0.3);
-  box-shadow: 0 0 60px rgba(0, 204, 255, 0.18), inset 0 0 30px rgba(0, 204, 255, 0.04);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-lg);
+  border-radius: var(--r-xl);
 }
 
-.corner {
-  position: absolute;
-  width: 14px;
-  height: 14px;
-  border: 2px solid #00ccff;
-  opacity: 0.75;
-}
-.top-left     { top: 6px;    left: 6px;    border-right: none;  border-bottom: none; }
-.top-right    { top: 6px;    right: 6px;   border-left: none;   border-bottom: none; }
-.bottom-left  { bottom: 6px; left: 6px;    border-right: none;  border-top: none; }
-.bottom-right { bottom: 6px; right: 6px;   border-left: none;   border-top: none; }
+.corner { display: none; }
+
 
 .gate-status {
   font-size: 0.7rem;
@@ -296,7 +284,7 @@ onBeforeUnmount(() => {
   font-weight: 900;
   letter-spacing: 0.1em;
   margin: 0 0 22px;
-  text-shadow: 0 0 14px rgba(0, 204, 255, 0.45);
+  text-shadow: 0 0 14px color-mix(in srgb, var(--primary) 18%, transparent);
 }
 
 .gate-body .lead {
@@ -307,7 +295,7 @@ onBeforeUnmount(() => {
 }
 
 .gate-body .muted {
-  color: #aaa;
+  color: var(--text-2);
   font-size: 0.82rem;
   line-height: 1.4;
 }
@@ -315,7 +303,7 @@ onBeforeUnmount(() => {
 .steps {
   margin: 0 0 22px;
   padding-left: 22px;
-  color: #ddd;
+  color: var(--text);
   font-size: 0.85rem;
   line-height: 1.55;
 }
@@ -325,7 +313,7 @@ onBeforeUnmount(() => {
 }
 
 .steps b {
-  color: #00ccff;
+  color: var(--primary);
 }
 
 .actions {
@@ -348,31 +336,31 @@ onBeforeUnmount(() => {
 
 .primary {
   background: transparent;
-  border: 1px solid #00ccff;
-  color: #00ccff;
+  border: 1px solid var(--primary);
+  color: var(--primary);
 }
 
 .primary:hover {
-  background: #00ccff;
+  background: var(--primary);
   color: #000;
-  box-shadow: 0 0 18px rgba(0, 204, 255, 0.55);
+  box-shadow: 0 0 18px color-mix(in srgb, var(--primary) 18%, transparent);
 }
 
 .ghost {
   background: transparent;
-  border: 1px solid #444;
-  color: #aaa;
+  border: 1px solid var(--border);
+  color: var(--text-2);
 }
 
 .ghost:hover {
   border-color: #888;
-  color: #ddd;
+  color: var(--text);
 }
 
 .danger {
   background: transparent;
   border: 1px solid #ff3333;
-  color: #ff6666;
+  color: var(--c-rose);
 }
 
 .danger:hover {
@@ -381,7 +369,7 @@ onBeforeUnmount(() => {
 
 .probing-text {
   text-align: center;
-  color: #888;
+  color: var(--text-2);
   letter-spacing: 0.2em;
   font-size: 0.8rem;
   text-transform: uppercase;
@@ -392,8 +380,8 @@ onBeforeUnmount(() => {
   width: 44px;
   height: 44px;
   border-radius: 50%;
-  border: 3px solid rgba(0, 204, 255, 0.18);
-  border-top-color: #00ccff;
+  border: 3px solid color-mix(in srgb, var(--primary) 18%, transparent);
+  border-top-color: var(--primary);
   animation: spin 1s linear infinite;
   margin: 12px auto 18px;
 }

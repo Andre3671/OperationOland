@@ -5,10 +5,6 @@
     @touchend.passive="onTouchEnd"
   >
     <div class="tutorial-frame">
-      <div class="corner top-left"></div>
-      <div class="corner top-right"></div>
-      <div class="corner bottom-left"></div>
-      <div class="corner bottom-right"></div>
 
       <div class="tutorial-head">
         <span class="head-label">FÄLTMANUAL</span>
@@ -157,8 +153,8 @@ function onTouchEnd(e) {
   align-items: center;
   justify-content: safe center;
   z-index: 9700;
-  font-family: 'JetBrains Mono', 'Courier New', monospace;
-  color: #00ccff;
+  font-family: 'JetBrains Mono', var(--font-mono);
+  color: var(--primary);
   padding: 20px;
   box-sizing: border-box;
   overflow: auto;
@@ -170,8 +166,8 @@ function onTouchEnd(e) {
   inset: 0;
   background: repeating-linear-gradient(
     0deg,
-    rgba(0, 204, 255, 0.025) 0px,
-    rgba(0, 204, 255, 0.025) 1px,
+    color-mix(in srgb, var(--primary) 18%, transparent) 0px,
+    color-mix(in srgb, var(--primary) 18%, transparent) 1px,
     transparent 1px,
     transparent 3px
   );
@@ -181,25 +177,17 @@ function onTouchEnd(e) {
 .tutorial-frame {
   position: relative;
   width: 100%;
-  max-width: 440px;
+  max-width: var(--panel-max);
   padding: 30px 24px 24px;
-  background: rgba(0, 0, 0, 0.9);
-  border: 1px solid rgba(0, 204, 255, 0.3);
-  box-shadow: 0 0 50px rgba(0, 204, 255, 0.15), inset 0 0 30px rgba(0, 204, 255, 0.04);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-lg);
   box-sizing: border-box;
+  border-radius: var(--r-xl);
 }
 
-.corner {
-  position: absolute;
-  width: 15px;
-  height: 15px;
-  border: 2px solid #00ccff;
-  opacity: 0.7;
-}
-.top-left     { top: 6px;    left: 6px;   border-right: none; border-bottom: none; }
-.top-right    { top: 6px;    right: 6px;  border-left: none;  border-bottom: none; }
-.bottom-left  { bottom: 6px; left: 6px;   border-right: none; border-top: none; }
-.bottom-right { bottom: 6px; right: 6px;  border-left: none;  border-top: none; }
+.corner { display: none; }
+
 
 .tutorial-head {
   display: flex;
@@ -230,7 +218,7 @@ function onTouchEnd(e) {
 .step-icon {
   font-size: 2.4rem;
   margin-bottom: 12px;
-  filter: drop-shadow(0 0 10px rgba(0, 204, 255, 0.35));
+  filter: drop-shadow(0 0 10px color-mix(in srgb, var(--primary) 18%, transparent));
 }
 
 .step-title {
@@ -245,7 +233,7 @@ function onTouchEnd(e) {
   width: 70%;
   height: 1px;
   margin-bottom: 16px;
-  background: linear-gradient(90deg, transparent, #00ccff, transparent);
+  background: linear-gradient(90deg, transparent, var(--primary), transparent);
 }
 
 .step-text {
@@ -258,7 +246,7 @@ function onTouchEnd(e) {
 .step-hint {
   font-size: 0.72rem;
   line-height: 1.4;
-  color: #00ccff;
+  color: var(--primary);
   opacity: 0.7;
   margin: 0;
   letter-spacing: 0.04em;
@@ -276,20 +264,20 @@ function onTouchEnd(e) {
   height: 9px;
   padding: 0;
   border-radius: 50%;
-  border: 1px solid rgba(0, 204, 255, 0.5);
+  border: 1px solid color-mix(in srgb, var(--primary) 18%, transparent);
   background: transparent;
   cursor: pointer;
   transition: background 0.2s, box-shadow 0.2s;
 }
 
 .dot.active {
-  background: #00ccff;
-  box-shadow: 0 0 8px rgba(0, 204, 255, 0.8);
+  background: var(--primary);
+  box-shadow: 0 0 8px color-mix(in srgb, var(--primary) 18%, transparent);
 }
 
 .scanner-line {
   height: 1px;
-  background: rgba(0, 204, 255, 0.18);
+  background: color-mix(in srgb, var(--primary) 18%, transparent);
   position: relative;
   overflow: hidden;
   margin-bottom: 16px;
@@ -302,8 +290,8 @@ function onTouchEnd(e) {
   left: 0;
   width: 50px;
   height: 100%;
-  background: #00ccff;
-  box-shadow: 0 0 8px #00ccff;
+  background: var(--primary);
+  box-shadow: 0 0 8px var(--primary);
   animation: tut-scan 2.6s linear infinite;
 }
 
@@ -320,8 +308,8 @@ function onTouchEnd(e) {
 .ghost-btn {
   flex: 0 0 auto;
   background: transparent;
-  border: 1px solid rgba(0, 204, 255, 0.3);
-  color: rgba(0, 204, 255, 0.65);
+  border: 1px solid color-mix(in srgb, var(--primary) 18%, transparent);
+  color: color-mix(in srgb, var(--primary) 18%, transparent);
   padding: 12px 10px;
   font-family: inherit;
   font-size: 0.68rem;
@@ -332,15 +320,15 @@ function onTouchEnd(e) {
 }
 
 .ghost-btn:hover {
-  border-color: #00ccff;
-  color: #00ccff;
+  border-color: var(--primary);
+  color: var(--primary);
 }
 
 .next-btn {
   flex: 1;
   background: transparent;
-  border: 1px solid #00ccff;
-  color: #00ccff;
+  border: 1px solid var(--primary);
+  color: var(--primary);
   padding: 12px;
   font-family: inherit;
   font-size: 0.78rem;
@@ -351,9 +339,9 @@ function onTouchEnd(e) {
 }
 
 .next-btn:hover {
-  background: #00ccff;
+  background: var(--primary);
   color: #000;
-  box-shadow: 0 0 20px rgba(0, 204, 255, 0.6);
+  box-shadow: 0 0 20px color-mix(in srgb, var(--primary) 18%, transparent);
 }
 
 @media (max-width: 380px) {

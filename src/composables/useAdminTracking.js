@@ -108,9 +108,7 @@ function buildRouteSampler(path) {
 }
 
 const ESTIMATED_DRIVING_KMH = 55
-const ESTIMATED_WALKING_KMH = 5
 const ROAD_DISTANCE_FACTOR = 1.25
-const WALKING_DISTANCE_FACTOR = 1.15
 
 // The road router (and the straight-line fallback) estimate driving time
 // conservatively — on real Öland/Skåne roads driven at the speed limit, teams
@@ -118,27 +116,23 @@ const WALKING_DISTANCE_FACTOR = 1.15
 // Lower this if estimates still run high, raise it toward 1.0 if they run low.
 const DRIVE_ETA_FACTOR = 0.85
 
-function estimateSegmentMinutes(from, to, walking = false) {
-  const factor = walking ? WALKING_DISTANCE_FACTOR : ROAD_DISTANCE_FACTOR
-  const kmh = walking ? ESTIMATED_WALKING_KMH : ESTIMATED_DRIVING_KMH
-  const distanceKm = haversineDistance(from, to) * factor
+function estimateSegmentMinutes(from, to) {
+  const distanceKm = haversineDistance(from, to) * ROAD_DISTANCE_FACTOR
   if (!Number.isFinite(distanceKm) || distanceKm <= 0) return 0
-  return Math.max(1, Math.round((distanceKm / kmh) * 60))
+  return Math.max(1, Math.round((distanceKm / ESTIMATED_DRIVING_KMH) * 60))
 }
 
-function getSegmentMinutes(route, waypoints, walking = false) {
+function getSegmentMinutes(route, waypoints) {
   const legs = Math.max(0, (waypoints?.length || 0) - 1)
   if (legs === 0) return []
 
-  // Driving ETAs get the real-world correction; walking is left as-is.
-  const factor = walking ? 1 : DRIVE_ETA_FACTOR
   return Array.from({ length: legs }, (_, index) => {
     const durationSeconds = route?.segments?.[index]?.duration
     if (Number.isFinite(durationSeconds) && durationSeconds > 0) {
-      return Math.max(1, Math.round((durationSeconds / 60) * factor))
+      return Math.max(1, Math.round((durationSeconds / 60) * DRIVE_ETA_FACTOR))
     }
     return Math.max(1, Math.round(
-      estimateSegmentMinutes(waypoints[index], waypoints[index + 1], walking) * factor
+      estimateSegmentMinutes(waypoints[index], waypoints[index + 1]) * DRIVE_ETA_FACTOR
     ))
   })
 }
@@ -255,7 +249,6 @@ export function useAdminTracking() {
     globalFinish,
     isOperationActive,
     setOperationActive,
-    walkingMode,
     operationStartTime,
     meetingPointTime,
     idealRoadPaths,
@@ -386,7 +379,9 @@ export function useAdminTracking() {
         const data = await fetchWithRetry(url, { headers: { 'Accept-Language': 'sv', 'User-Agent': 'OperationOland-Bot' } })
         if (data && data.address) {
           const addr = data.address
-          if (addr.country_code === 'se') {
+          // No country restriction — an operation can be planned anywhere.
+          // Geographic sanity is enforced by the start/finish viewbox below.
+          {
             const type = data.type || ''
             const roadName = addr.road || ''
             const roadRef = addr.ref || ''
@@ -401,9 +396,12 @@ export function useAdminTracking() {
               const region = addr.county || addr.state || addr.municipality || ''
               if (!requireSettlement || settlementName) {
                 if (requireSettlement && settlementName) {
-                  // CONSTRAINED SEARCH: Use viewbox to prevent teleportation to north of Sweden
+                  // CONSTRAINED SEARCH: the viewbox around start/finish keeps a
+                  // common place name from resolving to a same-named town on
+                  // another continent. Falls back to unbounded when the
+                  // operation axis isn't set yet.
                   const viewbox = getOperationViewbox()
-                  let sUrl = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(settlementName + ', Sverige')}&format=json&limit=1&addressdetails=1`
+                  let sUrl = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(settlementName)}&format=json&limit=1&addressdetails=1`
                   if (viewbox) sUrl += `&viewbox=${viewbox}&bounded=1`
 
                   const sData = await fetchWithRetry(sUrl, { headers: { 'User-Agent': 'OperationOland-Bot' } })
@@ -432,10 +430,8 @@ export function useAdminTracking() {
         const data = await res.json()
         if (data && data.features && data.features[0]) {
           const fProps = data.features[0].properties
-          if (fProps.countrycode === 'SE' || fProps.country === 'Sweden') {
-            const region = fProps.county || fProps.state || ''
-            return { lat: data.features[0].geometry.coordinates[1], lng: data.features[0].geometry.coordinates[0], name: fProps.name || fProps.city || 'Sektor', region, road: fProps.street || '' }
-          }
+          const region = fProps.county || fProps.state || ''
+          return { lat: data.features[0].geometry.coordinates[1], lng: data.features[0].geometry.coordinates[0], name: fProps.name || fProps.city || 'Sektor', region, road: fProps.street || '' }
         }
       } catch (e) {
         console.warn('Photon reverse geocode failed too:', e)
@@ -551,12 +547,10 @@ export function useAdminTracking() {
   // configured. Same return shape as the ORS path below: [lat,lng] coords
   // with distanceMeters / durationSeconds / segments attached. Caveat: OSRM
   // has no avoid-highways option, so fallback routes may use motorways.
-  async function fetchOsrmRoute(validPoints, walking) {
-    const base = walking
-      ? 'https://routing.openstreetmap.de/routed-foot'
-      : 'https://routing.openstreetmap.de/routed-car'
+  async function fetchOsrmRoute(validPoints) {
+    const base = 'https://routing.openstreetmap.de/routed-car'
     const coordsStr = validPoints.map(w => `${w[1]},${w[0]}`).join(';')
-    const url = `${base}/route/v1/${walking ? 'foot' : 'driving'}/${coordsStr}?overview=full&geometries=geojson&steps=false`
+    const url = `${base}/route/v1/driving/${coordsStr}?overview=full&geometries=geojson&steps=false`
     const res = await fetch(url)
     if (!res.ok) throw new Error(`OSRM ${res.status}`)
     const data = await res.json()
@@ -582,7 +576,7 @@ export function useAdminTracking() {
     if (!apiKey) {
       console.warn('[Routing] VITE_ORS_API_KEY is not set — trying OSRM fallback. See .env.example.')
       try {
-        return await fetchOsrmRoute(validPoints, walkingMode.value)
+        return await fetchOsrmRoute(validPoints)
       } catch (e) {
         console.warn('[Routing] OSRM fallback failed, using straight-line fallback:', e)
         return validPoints
@@ -593,17 +587,13 @@ export function useAdminTracking() {
       // OpenRouteService expects [lng, lat] pairs and supports avoid_features: ["highways"]
       // to keep routes off motorways (E4, E22, etc.).
       const coordinates = validPoints.map(w => [w[1], w[0]])
-      const walking = walkingMode.value
       const body = {
         coordinates,
-        // Walking snaps must stay tight — a 2 km radius on foot lets ORS leap
-        // across waterways via the nearest ferry and return an absurd duration.
-        radiuses: validPoints.map(() => walking ? 250 : 2000),
+        radiuses: validPoints.map(() => 2000),
       }
-      if (!walking && avoidHighways.value) body.options = { avoid_features: ['highways'] }
+      if (avoidHighways.value) body.options = { avoid_features: ['highways'] }
 
-      const profile = walking ? 'foot-walking' : 'driving-car'
-      const url = `https://api.openrouteservice.org/v2/directions/${profile}/geojson`
+      const url = 'https://api.openrouteservice.org/v2/directions/driving-car/geojson'
       console.log("[Routing] ORS request:", url, body)
 
       const res = await fetch(url, {
@@ -636,7 +626,7 @@ export function useAdminTracking() {
     } catch (e) {
       console.warn('[Routing] ORS failed, trying OSRM fallback:', e)
       try {
-        return await fetchOsrmRoute(validPoints, walkingMode.value)
+        return await fetchOsrmRoute(validPoints)
       } catch (e2) {
         console.warn('[Routing] OSRM fallback failed too, using straight-line fallback:', e2)
         return validPoints
@@ -684,12 +674,10 @@ export function useAdminTracking() {
       isLoading.value = false
       return
     }
-    // Walking corridors are tiny, so the fixed 0.15° (≈17 km) lateral spread
-    // throws CPs miles off the corridor and ORS then snaps them to unrelated
-    // settlements far from the route. In walking mode keep CPs within ~500 m
-    // of the corridor with a ~150 m jitter regardless of corridor length.
-    const perpScale = walkingMode.value ? 0.005 : 0.15
-    const cpJitter = walkingMode.value ? 0.0015 : 0.05
+    // Lateral spread of the CP corridor around the straight start→finish axis,
+    // in degrees (0.15° ≈ 17 km), plus the per-CP jitter on top.
+    const perpScale = 0.15
+    const cpJitter = 0.05
     const perpX = (-dx / mainDist) * perpScale
     const perpY = (dy / mainDist) * perpScale
 
@@ -761,8 +749,8 @@ export function useAdminTracking() {
       // plus the meeting injection). count ≥ MAX(1, ceil(total/30) - 2).
       if (autoCount) {
         const MAX_SEGMENT_MINUTES = 30
-        const kmh = walkingMode.value ? ESTIMATED_WALKING_KMH : ESTIMATED_DRIVING_KMH
-        const factor = walkingMode.value ? WALKING_DISTANCE_FACTOR : ROAD_DISTANCE_FACTOR
+        const kmh = ESTIMATED_DRIVING_KMH
+        const factor = ROAD_DISTANCE_FACTOR
         const orsSeconds = idealRoute && idealRoute.durationSeconds
         const totalMinutes = Number.isFinite(orsSeconds) && orsSeconds > 0
           ? orsSeconds / 60
@@ -799,7 +787,7 @@ export function useAdminTracking() {
       // A CP candidate is rejected if it lands further than this from the query
       // sample point — prevents Nominatim from snapping forest sample points to
       // distant settlements and creating long detour spikes.
-      const MAX_CANDIDATE_DRIFT_KM = walkingMode.value ? 2 : 20
+      const MAX_CANDIDATE_DRIFT_KM = 20
 
       const meetingIndex = Math.floor(count / 2)
       const sharedTaskIndexes = new Set(getEvenlySpacedIndexes(count, sharedTaskCount))
@@ -961,7 +949,7 @@ export function useAdminTracking() {
         
         // Calculate segment durations (in minutes) from ORS when available,
         // otherwise estimate from each generated leg so the UI never shows all zeroes.
-        const segmentMinutes = getSegmentMinutes(teamRoute, selectedTeamWaypoints, walkingMode.value)
+        const segmentMinutes = getSegmentMinutes(teamRoute, selectedTeamWaypoints)
         
         const startCheckpoint = {
           id: nextCheckpointId.value++,
@@ -1071,7 +1059,6 @@ export function useAdminTracking() {
     if (isSimulationMode.value) setDebugPositionsFromHistory()
   }
   function toggleOperation() { setOperationActive(!isOperationActive.value) }
-  function toggleWalkingMode() { walkingMode.value = !walkingMode.value }
   // Debug tool: pushes the coordinates typed into the sim-GPS panel
   // (debugPositions) as the team's position.
   function updateTeamPosition(team) {
@@ -1104,13 +1091,15 @@ export function useAdminTracking() {
   function updateGlobalStart(lat, lng, name, region = '') { globalStart.value = { lat: parseFloat(lat), lng: parseFloat(lng), name, region } }
   function updateGlobalFinish(lat, lng, name, region = '') { globalFinish.value = { lat: parseFloat(lat), lng: parseFloat(lng), name, region } }
 
-  // Forward-geocode a city/town name to lat/lng via Nominatim. Restricted to
-  // Sweden so a query like "Lund" doesn't pick the Polish town.
+  // Forward-geocode a city/town name to lat/lng via Nominatim. Unrestricted —
+  // operations can be planned anywhere. Nominatim ranks by importance, so a
+  // bare "Lund" still resolves to the Swedish city; add a country to the query
+  // ("Lund, Polen") when you want a specific one of several same-named places.
   async function searchPlace(query) {
     const trimmed = (query || '').toString().trim()
     if (!trimmed) return null
     try {
-      const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(trimmed)}&format=json&limit=1&countrycodes=se&addressdetails=1`
+      const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(trimmed)}&format=json&limit=1&addressdetails=1`
       const data = await fetchWithRetry(url, { headers: { 'User-Agent': 'OperationOland-Bot' } })
       if (Array.isArray(data) && data[0]) {
         const addr = data[0].address || {}
@@ -1193,5 +1182,5 @@ export function useAdminTracking() {
     if (intervalId) { clearInterval(intervalId); intervalId = null }
   })
 
-  return { activeIdealRoutes, actualRoutes, livePoints, teamSummaries, isLoading, genProgress, error, refresh, debugMode: isSimulationMode, debugPositions, toggleDebug, toggleOperation, updateTeamPosition, snapToIdeal, moveTeamCheckpoint, checkpoints, meetingPoint, globalStart, globalFinish, updateGlobalStart, updateGlobalFinish, setStartByName, setFinishByName, moveStartTo, moveFinishTo, removeCheckpoint, updateCheckpoint, updateMeetingPoint, generateRoutes, avoidHighways, isSimulationMode, isOperationActive, walkingMode, toggleWalkingMode, operationStartTime, meetingPointTime, teamProgress, teams, teamCheating, arrivalLog, chatMessages, sendChatMessage, releaseSlot, resetAll, configureSlots, teamRosters, mode, sabotageMissions, sabotageEffects, sabotageLog, operationsList, activeOperationId, createOperation, activateOperation, renameOperation, deleteOperation }
+  return { activeIdealRoutes, actualRoutes, livePoints, teamSummaries, isLoading, genProgress, error, refresh, debugMode: isSimulationMode, debugPositions, toggleDebug, toggleOperation, updateTeamPosition, snapToIdeal, moveTeamCheckpoint, checkpoints, meetingPoint, globalStart, globalFinish, updateGlobalStart, updateGlobalFinish, setStartByName, setFinishByName, moveStartTo, moveFinishTo, removeCheckpoint, updateCheckpoint, updateMeetingPoint, generateRoutes, avoidHighways, isSimulationMode, isOperationActive, operationStartTime, meetingPointTime, teamProgress, teams, teamCheating, arrivalLog, chatMessages, sendChatMessage, releaseSlot, resetAll, configureSlots, teamRosters, mode, sabotageMissions, sabotageEffects, sabotageLog, operationsList, activeOperationId, createOperation, activateOperation, renameOperation, deleteOperation }
 }

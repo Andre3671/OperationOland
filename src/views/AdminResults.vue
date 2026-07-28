@@ -99,7 +99,7 @@
           <div class="reveal-team-head">
             <span class="team-swatch" :style="{ background: row.color }"></span>
             <span class="reveal-team-name">{{ row.displayName }}</span>
-            <span v-if="row.saboteur" class="reveal-sab-name">SABOTÖR: {{ row.saboteur }} 🕶️</span>
+            <span v-if="row.saboteur" class="reveal-sab-name">JOKER: {{ row.saboteur }} 🃏</span>
             <span v-else class="reveal-no-sab">ingen sabotör</span>
             <span v-if="row.totalCost" class="reveal-cost">−{{ row.totalCost }} p i sabotagekostnad</span>
           </div>
@@ -324,8 +324,8 @@ const showReveal = computed(() =>
 <style scoped>
 .results-shell {
   min-height: 100vh;
-  background: #0a0a0a;
-  color: #eee;
+  background: var(--bg);
+  color: var(--text);
   font-family: 'JetBrains Mono', monospace;
 }
 
@@ -335,7 +335,7 @@ const showReveal = computed(() =>
   align-items: center;
   padding: 12px 20px;
   background: linear-gradient(180deg, rgba(0,0,0,0.95) 0%, rgba(0,0,0,0.7) 100%);
-  border-bottom: 1px solid rgba(0, 204, 255, 0.2);
+  border-bottom: 1px solid color-mix(in srgb, var(--primary) 18%, transparent);
   position: sticky;
   top: 0;
   z-index: 10;
@@ -348,7 +348,7 @@ const showReveal = computed(() =>
 }
 
 .back-link {
-  color: #00ccff;
+  color: var(--primary);
   text-decoration: none;
   font-size: 0.8rem;
   letter-spacing: 0.06em;
@@ -358,11 +358,11 @@ const showReveal = computed(() =>
 .results-title {
   font-weight: 800;
   letter-spacing: 0.1em;
-  color: #00ccff;
+  color: var(--primary);
 }
 
 .results-meta {
-  color: #888;
+  color: var(--text-2);
   font-size: 0.75rem;
   letter-spacing: 0.06em;
 }
@@ -377,7 +377,7 @@ const showReveal = computed(() =>
 }
 
 .results-empty {
-  color: #666;
+  color: var(--text-3);
   text-align: center;
   padding: 60px 20px;
   font-style: italic;
@@ -417,7 +417,7 @@ const showReveal = computed(() =>
 }
 
 .team-progress-tag {
-  color: #888;
+  color: var(--text-2);
   font-size: 0.75rem;
   font-weight: 500;
   margin-left: 8px;
@@ -439,7 +439,7 @@ const showReveal = computed(() =>
 
 .stat-label {
   font-size: 0.6rem;
-  color: #666;
+  color: var(--text-3);
   letter-spacing: 0.1em;
   text-transform: uppercase;
 }
@@ -448,7 +448,7 @@ const showReveal = computed(() =>
   font-weight: 800;
   font-size: 1rem;
   font-variant-numeric: tabular-nums;
-  color: #eee;
+  color: var(--text);
 }
 
 .stat-score { color: #ffcc00; }
@@ -457,14 +457,14 @@ const showReveal = computed(() =>
 
 .stat-sub {
   font-size: 0.65rem;
-  color: #666;
+  color: var(--text-3);
   font-variant-numeric: tabular-nums;
   margin-top: 2px;
 }
 .stat-sub.is-late { color: #ff8866; }
 
 .team-empty {
-  color: #666;
+  color: var(--text-3);
   font-style: italic;
   font-size: 0.85rem;
   padding: 16px 0;
@@ -485,11 +485,11 @@ const showReveal = computed(() =>
   gap: 8px;
 }
 
-.cp-tile.is-done { border-color: rgba(0, 255, 0, 0.25); }
+.cp-tile.is-done { border-color: var(--border); }
 .cp-tile.is-pending { opacity: 0.55; }
 .cp-tile.is-meeting { border-color: rgba(255, 204, 0, 0.45); }
 .cp-tile.is-finish { border-color: rgba(255, 85, 102, 0.45); }
-.cp-tile.is-start { border-color: rgba(0, 204, 255, 0.45); }
+.cp-tile.is-start { border-color: color-mix(in srgb, var(--primary) 18%, transparent); }
 
 .cp-tile-head {
   display: flex;
@@ -500,11 +500,11 @@ const showReveal = computed(() =>
 }
 
 .cp-num {
-  background: #222;
+  background: var(--surface-3);
   padding: 2px 6px;
   font-weight: 700;
   font-size: 0.7rem;
-  color: #ccc;
+  color: var(--text-2);
 }
 
 .cp-type-badge {
@@ -512,8 +512,8 @@ const showReveal = computed(() =>
   padding: 2px 5px;
   letter-spacing: 0.08em;
   font-weight: 800;
-  background: #333;
-  color: #ddd;
+  background: var(--surface-3);
+  color: var(--text);
 }
 
 .badge-meeting { background: #ffcc00; color: #000; }
@@ -523,7 +523,7 @@ const showReveal = computed(() =>
 
 .cp-name {
   font-weight: 600;
-  color: #eee;
+  color: var(--text);
   flex: 1;
   min-width: 0;
   overflow-wrap: anywhere;
@@ -545,7 +545,7 @@ const showReveal = computed(() =>
 
 .cp-time-label {
   font-size: 0.55rem;
-  color: #666;
+  color: var(--text-3);
   letter-spacing: 0.1em;
   text-transform: uppercase;
 }
@@ -553,7 +553,7 @@ const showReveal = computed(() =>
 .cp-time-value {
   font-variant-numeric: tabular-nums;
   font-weight: 700;
-  color: #ccc;
+  color: var(--text-2);
 }
 
 .cp-time-value.is-late { color: #ff8866; }
@@ -585,7 +585,7 @@ const showReveal = computed(() =>
 
 .cp-no-photo {
   font-size: 0.7rem;
-  color: #555;
+  color: var(--text-3);
   font-style: italic;
 }
 
@@ -608,7 +608,7 @@ const showReveal = computed(() =>
 }
 
 .reveal-sub {
-  color: #888;
+  color: var(--text-2);
   font-size: 0.75rem;
   margin-bottom: 18px;
 }
@@ -644,14 +644,14 @@ const showReveal = computed(() =>
 }
 
 .reveal-no-sab {
-  color: #666;
+  color: var(--text-3);
   font-size: 0.72rem;
   font-style: italic;
 }
 
 .reveal-cost {
   margin-left: auto;
-  color: #ffcc00;
+  color: var(--c-amber);
   font-size: 0.72rem;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
@@ -665,7 +665,7 @@ const showReveal = computed(() =>
   align-items: baseline;
   font-size: 0.76rem;
   line-height: 1.5;
-  color: #ddd;
+  color: var(--text);
   padding: 3px 0;
 }
 
@@ -673,7 +673,7 @@ const showReveal = computed(() =>
 
 .reveal-time {
   flex: 0 0 44px;
-  color: #888;
+  color: var(--text-2);
   font-variant-numeric: tabular-nums;
   font-size: 0.7rem;
 }
@@ -681,14 +681,14 @@ const showReveal = computed(() =>
 .reveal-what { flex: 1; min-width: 0; overflow-wrap: anywhere; }
 
 .reveal-row-cost {
-  color: #ffcc00;
+  color: var(--c-amber);
   font-size: 0.7rem;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
 }
 
 .reveal-quiet {
-  color: #666;
+  color: var(--text-3);
   font-size: 0.74rem;
   font-style: italic;
 }

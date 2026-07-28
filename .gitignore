@@ -6,3 +6,11 @@ dist
 .vscode
 .idea
 .DS_Store
+
+# Signing secrets — keystore.properties holds the keystore password in plain
+# text. It is currently untracked only by luck; one `git add -A` would commit
+# it. Never let these into the repo.
+android/keystore.properties
+*.keystore
+*.jks
+*.p12

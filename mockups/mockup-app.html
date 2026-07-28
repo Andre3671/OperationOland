@@ -1,0 +1,555 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Spelarapp — Operation Roadtrip (mockup)</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --r-sm:12px; --r-md:18px; --r-lg:26px; --r-pill:999px;
+  --c-cyan:#38bdf8; --c-violet:#a78bfa; --c-lime:#4ade80;
+  --c-amber:#fbbf24; --c-rose:#fb7185;
+  --font:'Inter',system-ui,sans-serif;
+  --mono:'JetBrains Mono',ui-monospace,monospace;
+}
+/* ---- app surface tokens (the phone interior) ---- */
+body[data-theme="dark"]{
+  --page:#0d1220; --page-2:#141b2e; --page-txt:#eef2ff; --page-txt2:#a3aecb;
+  --s:#141b2e; --s2:#1b2440; --s3:#232e50;
+  --bd:#28324f; --tx:#f2f5ff; --tx2:#9aa6c6; --tx3:#66739a;
+  --pri:#6d94ff; --pri-soft:#22305a; --on-pri:#0b1020;
+  --shadow:0 12px 34px rgba(0,0,0,.5);
+  --map-a:#151d34; --map-b:#0d1425; --map-line:#1f2942;
+}
+body[data-theme="light"]{
+  --page:#eef2fb; --page-2:#fff; --page-txt:#16203a; --page-txt2:#5a6785;
+  --s:#fff; --s2:#f4f7fd; --s3:#e9eff9;
+  --bd:#e2e8f4; --tx:#16203a; --tx2:#5a6785; --tx3:#93a0bb;
+  --pri:#4f7cff; --pri-soft:#e8efff; --on-pri:#fff;
+  --shadow:0 12px 34px rgba(20,32,64,.14);
+  --map-a:#e2eaf7; --map-b:#d2dff0; --map-line:#c4d1e6;
+}
+*{box-sizing:border-box}
+body{margin:0;font-family:var(--font);background:var(--page);color:var(--page-txt);
+  -webkit-font-smoothing:antialiased;transition:background .3s}
+
+.hdr{max-width:1400px;margin:0 auto;padding:44px 24px 12px}
+.hdr h1{font-size:2rem;font-weight:900;letter-spacing:-.03em;margin:0 0 8px}
+.hdr p{margin:0;color:var(--page-txt2);font-size:.95rem;max-width:620px;line-height:1.6}
+
+.theme-switch{position:fixed;bottom:18px;left:18px;z-index:60;display:flex;gap:4px;padding:4px;
+  background:var(--s);border:1px solid var(--bd);border-radius:var(--r-pill);box-shadow:var(--shadow)}
+.theme-switch button{border:0;background:transparent;color:var(--tx2);font-family:var(--font);
+  font-size:12px;font-weight:600;padding:8px 15px;border-radius:var(--r-pill);cursor:pointer}
+.theme-switch button.on{background:var(--pri);color:var(--on-pri)}
+
+/* ---------- phone gallery ---------- */
+.gallery{max-width:1400px;margin:0 auto;padding:24px 24px 90px;
+  display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:44px 30px}
+.slot{display:flex;flex-direction:column;align-items:center;gap:14px}
+.cap{text-align:center}
+.cap b{display:block;font-size:.95rem;font-weight:700;letter-spacing:-.01em}
+.cap span{display:block;font-size:.78rem;color:var(--page-txt2);margin-top:3px;line-height:1.45;max-width:290px}
+
+.phone{
+  width:320px;height:660px;flex:none;position:relative;
+  border-radius:42px;padding:11px;
+  background:linear-gradient(160deg,#3a4260,#1a1f30);
+  box-shadow:0 26px 60px rgba(0,0,0,.34), inset 0 0 0 1px rgba(255,255,255,.07);
+}
+body[data-theme="light"] .phone{background:linear-gradient(160deg,#c9d2e5,#8b96b3)}
+.screen{
+  width:100%;height:100%;border-radius:32px;overflow:hidden;position:relative;
+  background:var(--page-2);color:var(--tx);display:flex;flex-direction:column;
+}
+.notch{position:absolute;top:11px;left:50%;transform:translateX(-50%);
+  width:96px;height:22px;border-radius:var(--r-pill);background:#0b0f1c;z-index:30}
+.statusbar{height:34px;flex:none;display:flex;align-items:center;justify-content:space-between;
+  padding:0 20px;font-size:11px;font-weight:600;color:var(--tx2);font-family:var(--mono)}
+
+/* ---------- shared app bits ---------- */
+.pad{padding:18px;flex:1;overflow:hidden;display:flex;flex-direction:column}
+.appbar{flex:none;display:flex;align-items:center;gap:9px;padding:10px 16px;border-bottom:1px solid var(--bd)}
+.ab-logo{width:28px;height:28px;border-radius:9px;display:grid;place-items:center;font-size:14px;
+  background:linear-gradient(135deg,var(--pri),var(--c-violet));color:#fff;flex:none}
+.ab-t{flex:1;min-width:0}
+.ab-t b{display:block;font-size:12.5px;font-weight:700;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ab-t span{font-size:10px;color:var(--tx3);font-weight:600}
+.icobtn{width:30px;height:30px;border-radius:10px;border:1px solid var(--bd);background:var(--s2);
+  color:var(--tx2);font-size:12px;display:grid;place-items:center;flex:none;position:relative}
+.badge-n{position:absolute;top:-4px;right:-4px;min-width:15px;height:15px;border-radius:var(--r-pill);
+  background:var(--c-rose);color:#fff;font-size:9px;font-weight:800;display:grid;place-items:center;padding:0 3px}
+
+.h1{font-size:22px;font-weight:800;letter-spacing:-.025em;margin:0 0 8px;line-height:1.15}
+.h2{font-size:16px;font-weight:700;margin:0 0 6px;letter-spacing:-.015em}
+.sub{font-size:12.5px;line-height:1.55;color:var(--tx2);margin:0 0 20px}
+.eyebrow{font-family:var(--mono);font-size:10px;font-weight:700;letter-spacing:.16em;
+  text-transform:uppercase;color:var(--tx3);margin:0 0 10px}
+
+.btn{width:100%;font-family:var(--font);font-size:14.5px;font-weight:700;border:0;cursor:pointer;
+  padding:16px;border-radius:var(--r-pill);transition:.18s}
+.btn-p{background:linear-gradient(135deg,var(--pri),var(--c-violet));color:#fff;
+  box-shadow:0 8px 20px color-mix(in srgb,var(--pri) 36%,transparent)}
+.btn-p:disabled{opacity:.4;box-shadow:none}
+.btn-g{background:var(--s2);color:var(--tx2);border:1px solid var(--bd);margin-top:9px;font-size:13px;padding:13px}
+.btn-lime{background:linear-gradient(135deg,var(--c-lime),#22c55e);color:#052e16;box-shadow:0 8px 20px rgba(74,222,128,.3)}
+.btn-rose{background:linear-gradient(135deg,var(--c-rose),#e11d48);color:#fff;box-shadow:0 8px 20px rgba(251,113,133,.32)}
+.grow{flex:1}
+
+.card{background:var(--s);border:1px solid var(--bd);border-radius:var(--r-md);padding:15px;box-shadow:var(--shadow)}
+
+/* ---------- 1. JOIN ---------- */
+.joinlogo{width:64px;height:64px;border-radius:20px;display:grid;place-items:center;font-size:30px;
+  background:linear-gradient(135deg,var(--pri),var(--c-violet));box-shadow:0 12px 28px color-mix(in srgb,var(--pri) 40%,transparent);
+  margin:16px 0 22px}
+.codeboxes{display:flex;gap:7px;margin-bottom:8px}
+.cb{flex:1;aspect-ratio:1/1.25;border-radius:var(--r-sm);background:var(--s2);border:1.5px solid var(--bd);
+  display:grid;place-items:center;font-family:var(--mono);font-size:22px;font-weight:700;color:var(--tx)}
+.cb.filled{border-color:var(--pri);background:var(--pri-soft);color:var(--pri)}
+.cb.caret{border-color:var(--pri);box-shadow:0 0 0 3px color-mix(in srgb,var(--pri) 18%,transparent)}
+.cb.caret::after{content:'';width:2px;height:22px;background:var(--pri);animation:cursor 1.1s steps(1) infinite}
+@keyframes cursor{0%,49%{opacity:1}50%,100%{opacity:0}}
+.helper{font-size:11.5px;color:var(--tx3);text-align:center;margin:0 0 20px}
+
+/* ---------- 2. DEVICE ROLE ---------- */
+.opt{display:flex;gap:13px;align-items:flex-start;width:100%;text-align:left;
+  background:var(--s);border:1.5px solid var(--bd);border-radius:var(--r-md);padding:17px;margin-bottom:11px;cursor:pointer}
+.opt.sel{border-color:var(--pri);background:var(--pri-soft);box-shadow:0 0 0 3px color-mix(in srgb,var(--pri) 14%,transparent)}
+.opt-i{width:46px;height:46px;border-radius:15px;display:grid;place-items:center;font-size:22px;flex:none}
+.opt b{display:block;font-size:14.5px;font-weight:700;margin-bottom:4px;color:var(--tx)}
+.opt p{margin:0;font-size:11.5px;line-height:1.5;color:var(--tx2)}
+.tick{margin-left:auto;color:var(--pri);font-size:16px}
+
+/* ---------- 3. ROLE REVEAL ---------- */
+.rolecard{
+  flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;
+  border-radius:var(--r-lg);padding:26px 20px;position:relative;overflow:hidden;
+  background:linear-gradient(165deg,#2e1b4d,#180f2b 55%,#2b1a10);border:1px solid rgba(167,139,250,.42);
+}
+.rolecard::after{content:'';position:absolute;inset:0;
+  background:radial-gradient(circle at 30% 20%, rgba(167,139,250,.3), transparent 58%),
+             radial-gradient(circle at 74% 82%, rgba(251,191,36,.2), transparent 58%);pointer-events:none}
+.role-em{font-size:56px;margin-bottom:14px;filter:drop-shadow(0 6px 20px rgba(167,139,250,.65))}
+.role-lbl{font-family:var(--mono);font-size:10px;letter-spacing:.22em;color:rgba(255,255,255,.5);margin-bottom:8px}
+.role-nm{font-size:38px;font-weight:900;letter-spacing:-.03em;margin:0 0 12px;
+  background:linear-gradient(100deg,#c4b5fd,#fcd34d);-webkit-background-clip:text;background-clip:text;color:transparent;
+  filter:drop-shadow(0 4px 26px rgba(167,139,250,.5))}
+.role-tx{font-size:12.5px;line-height:1.6;color:rgba(255,255,255,.78);margin:0 0 16px;max-width:245px}
+.dual{display:flex;gap:9px;width:100%;max-width:250px;margin-bottom:16px}
+.dual div{flex:1;border-radius:var(--r-sm);padding:10px 8px;text-align:center}
+.dual .help{background:rgba(74,222,128,.14);border:1px solid rgba(74,222,128,.32)}
+.dual .harm{background:rgba(251,113,133,.14);border:1px solid rgba(251,113,133,.32)}
+.dual b{display:block;font-size:11px;font-weight:800;margin-bottom:2px}
+.dual .help b{color:#86efac}
+.dual .harm b{color:#fda4af}
+.dual span{font-size:9.5px;color:rgba(255,255,255,.6);line-height:1.35;display:block}
+.warn-pill{font-size:10.5px;font-weight:700;padding:8px 14px;border-radius:var(--r-pill);
+  background:rgba(167,139,250,.18);color:#c4b5fd;border:1px solid rgba(167,139,250,.35)}
+
+/* ---------- 4. NAVIGATOR HUD ---------- */
+.maparea{flex:1;position:relative;overflow:hidden;background:radial-gradient(700px 500px at 40% 35%,var(--map-a),var(--map-b))}
+.maparea svg{position:absolute;inset:0;width:100%;height:100%}
+.compass{
+  position:absolute;top:14px;right:14px;width:92px;height:92px;border-radius:50%;
+  background:color-mix(in srgb,var(--s) 88%,transparent);backdrop-filter:blur(10px);
+  border:1px solid var(--bd);box-shadow:var(--shadow);display:grid;place-items:center;
+}
+.needle{width:0;height:0;border-left:9px solid transparent;border-right:9px solid transparent;
+  border-bottom:34px solid var(--c-cyan);filter:drop-shadow(0 0 10px var(--c-cyan));transform:rotate(38deg)}
+.chead{position:absolute;bottom:7px;left:0;right:0;text-align:center;font-family:var(--mono);
+  font-size:9.5px;font-weight:700;color:var(--tx2);letter-spacing:.1em}
+.fab{position:absolute;right:14px;bottom:16px;width:50px;height:50px;border-radius:18px;
+  background:var(--s);border:1px solid var(--bd);box-shadow:var(--shadow);
+  display:grid;place-items:center;font-size:19px}
+.progdots{position:absolute;top:16px;left:14px;display:flex;gap:5px;padding:8px 12px;border-radius:var(--r-pill);
+  background:color-mix(in srgb,var(--s) 88%,transparent);backdrop-filter:blur(10px);border:1px solid var(--bd)}
+.pd{width:8px;height:8px;border-radius:50%;background:var(--bd)}
+.pd.done{background:var(--c-lime)}
+.pd.now{background:var(--c-cyan);box-shadow:0 0 0 3px color-mix(in srgb,var(--c-cyan) 25%,transparent)}
+
+.sheet{flex:none;background:var(--s);border-top:1px solid var(--bd);
+  border-radius:var(--r-lg) var(--r-lg) 0 0;padding:14px 18px 18px;margin-top:-22px;position:relative;z-index:5;
+  box-shadow:0 -12px 34px rgba(0,0,0,.22)}
+.grab{width:36px;height:4px;border-radius:var(--r-pill);background:var(--bd);margin:0 auto 14px}
+.tgt-row{display:flex;align-items:flex-end;justify-content:space-between;gap:12px;margin-bottom:14px}
+.tgt-lbl{font-family:var(--mono);font-size:9.5px;font-weight:700;letter-spacing:.16em;color:var(--tx3);margin-bottom:5px}
+.tgt-nm{font-size:17px;font-weight:800;letter-spacing:-.02em;line-height:1.15}
+.tgt-city{font-size:11px;color:var(--tx3);margin-top:3px}
+.dist{text-align:right;flex:none}
+.dist b{display:block;font-family:var(--mono);font-size:27px;font-weight:700;color:var(--c-cyan);line-height:1}
+.dist span{font-size:10px;color:var(--tx3);font-weight:600;letter-spacing:.08em}
+.crew{display:flex;gap:7px}
+.crewchip{flex:1;display:flex;align-items:center;gap:7px;background:var(--s2);border-radius:var(--r-sm);padding:8px 10px}
+.crewchip .e{font-size:13px}
+.crewchip .n{min-width:0}
+.crewchip b{display:block;font-size:11.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.crewchip span{font-size:9px;color:var(--tx3);text-transform:uppercase;letter-spacing:.08em;font-weight:700}
+
+/* ---------- 5. CHECKPOINT ---------- */
+.cp-hero{height:170px;flex:none;position:relative;display:grid;place-items:center;
+  background:linear-gradient(150deg,#0f766e,#134e4a)}
+.cp-hero .em{font-size:54px;filter:drop-shadow(0 6px 18px rgba(0,0,0,.4))}
+.cp-hero::after{content:'';position:absolute;inset:auto 0 0 0;height:60px;
+  background:linear-gradient(to top,var(--page-2),transparent)}
+.pts-pill{position:absolute;top:14px;right:14px;font-family:var(--mono);font-size:12px;font-weight:700;
+  padding:6px 13px;border-radius:var(--r-pill);background:rgba(0,0,0,.35);color:var(--c-lime);
+  border:1px solid rgba(74,222,128,.4)}
+.photo-box{border:1.5px dashed var(--bd);border-radius:var(--r-md);padding:22px;text-align:center;margin-bottom:12px}
+.photo-box.done{border-style:solid;border-color:var(--c-lime);background:color-mix(in srgb,var(--c-lime) 9%,transparent)}
+.photo-box .e{font-size:26px;display:block;margin-bottom:7px}
+.photo-box b{font-size:12.5px;font-weight:700;display:block}
+.photo-box span{font-size:11px;color:var(--tx3)}
+
+/* ---------- 6. JOKER CONSOLE ---------- */
+.segtabs{display:flex;gap:5px;padding:5px;background:var(--s2);border-radius:var(--r-pill);margin-bottom:14px}
+.segtabs button{flex:1;font-family:var(--font);font-size:12px;font-weight:700;color:var(--tx2);
+  background:transparent;border:0;padding:10px 6px;border-radius:var(--r-pill);cursor:pointer}
+.segtabs button.on{background:var(--s);color:var(--tx);box-shadow:var(--shadow)}
+.segtabs button.on.help{color:#22c55e}
+.abil.help .abil-i{background:color-mix(in srgb,var(--c-lime) 15%,transparent)}
+.abil.help .chg i{background:var(--c-lime)}
+.abil.help .chg i.used{background:var(--bd)}
+.fire.help{background:#22c55e}
+.selrow{display:flex;gap:7px;margin-bottom:14px}
+.selrow button{flex:1;font-family:var(--font);font-size:11.5px;font-weight:700;padding:10px 6px;
+  border-radius:var(--r-sm);border:1.5px solid var(--bd);background:var(--s2);color:var(--tx2);cursor:pointer}
+.selrow button.on{border-color:var(--c-rose);background:color-mix(in srgb,var(--c-rose) 14%,transparent);color:var(--c-rose)}
+.abil{display:flex;gap:12px;align-items:center;background:var(--s);border:1px solid var(--bd);
+  border-radius:var(--r-md);padding:12px;margin-bottom:9px}
+.abil.spent{opacity:.42}
+.abil-i{width:42px;height:42px;border-radius:14px;display:grid;place-items:center;font-size:19px;flex:none;
+  background:color-mix(in srgb,var(--c-rose) 13%,transparent)}
+.abil-b{flex:1;min-width:0}
+.abil-b b{display:block;font-size:12.5px;font-weight:700}
+.abil-b span{font-size:10.5px;color:var(--tx3)}
+.chg{display:flex;gap:3px;margin-top:5px}
+.chg i{width:14px;height:4px;border-radius:2px;background:var(--c-rose)}
+.chg i.used{background:var(--bd)}
+.fire{font-family:var(--font);font-size:11px;font-weight:800;padding:9px 13px;border-radius:var(--r-pill);
+  border:0;background:var(--c-rose);color:#fff;cursor:pointer;flex:none}
+.fire:disabled{background:var(--bd);color:var(--tx3)}
+.cooldown{display:flex;align-items:center;gap:10px;background:color-mix(in srgb,var(--c-amber) 12%,transparent);
+  border:1px solid color-mix(in srgb,var(--c-amber) 30%,transparent);border-radius:var(--r-md);padding:11px 14px;margin-bottom:14px}
+.cooldown b{font-family:var(--mono);font-size:14px;color:var(--c-amber)}
+.cooldown span{font-size:10.5px;color:var(--tx2);line-height:1.4}
+
+/* ---------- 7. RED LOCK ---------- */
+.lock{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;
+  padding:28px;background:linear-gradient(165deg,#7f1d1d,#450a0a);position:relative;overflow:hidden}
+.lock::before{content:'';position:absolute;inset:-40%;
+  background:repeating-linear-gradient(45deg,rgba(0,0,0,.16) 0 22px,transparent 22px 44px)}
+.lock>*{position:relative}
+.lock .em{font-size:60px;margin-bottom:16px;animation:shake 1.6s ease-in-out infinite}
+@keyframes shake{0%,100%{transform:rotate(-5deg)}50%{transform:rotate(5deg)}}
+.lock h1{font-size:26px;font-weight:900;color:#fff;margin:0 0 8px;letter-spacing:-.02em}
+.lock p{font-size:12.5px;line-height:1.6;color:rgba(255,255,255,.8);margin:0 0 24px;max-width:230px}
+.ring{width:130px;height:130px;border-radius:50%;display:grid;place-items:center;margin-bottom:20px;
+  background:conic-gradient(#fca5a5 0 62%, rgba(255,255,255,.15) 62% 100%)}
+.ring div{width:110px;height:110px;border-radius:50%;background:#450a0a;display:grid;place-items:center;
+  font-family:var(--mono);font-size:30px;font-weight:700;color:#fff}
+.penalty{font-size:11px;font-weight:700;color:#fca5a5;background:rgba(0,0,0,.28);
+  padding:8px 16px;border-radius:var(--r-pill)}
+
+/* ---------- 8. MEMBER ---------- */
+.memb-badge{display:flex;align-items:center;gap:7px;font-size:11px;font-weight:800;
+  padding:7px 13px;border-radius:var(--r-pill);
+  background:color-mix(in srgb,var(--c-rose) 15%,transparent);color:var(--c-rose);flex:none}
+.leader{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:var(--r-sm);
+  background:var(--s2);margin-bottom:6px}
+.leader.me{background:var(--pri-soft);box-shadow:inset 0 0 0 1.5px var(--pri)}
+.leader .r{width:20px;font-family:var(--mono);font-size:12px;font-weight:700;color:var(--tx3);text-align:center}
+.leader .n{flex:1;font-size:12.5px;font-weight:600}
+.leader .p{font-family:var(--mono);font-size:13px;font-weight:700}
+</style>
+</head>
+<body data-theme="dark">
+
+<div class="hdr">
+  <h1>Spelarappen — redesign</h1>
+  <p>Åtta nyckelskärmar i samma rundade, mjuka formspråk som webbpanelen. Mörkt läge är standard i appen (körning i skymning, batteri, stämning) — växla nere till vänster för att se det ljusa alternativet.</p>
+</div>
+
+<div class="gallery">
+
+<!-- ============ 1. JOIN ============ -->
+<div class="slot">
+  <div class="phone"><div class="notch"></div><div class="screen">
+    <div class="statusbar"><span>14:22</span><span>▮▮▮ ⌁ 87%</span></div>
+    <div class="pad">
+      <div class="joinlogo">🧭</div>
+      <h1 class="h1">Anslut till din operation</h1>
+      <p class="sub">Din spelledare har en 6-teckenskod. Skriv in den så hamnar du i rätt spel.</p>
+      <div class="codeboxes">
+        <div class="cb filled">K</div><div class="cb filled">X</div><div class="cb filled">9</div>
+        <div class="cb caret"></div><div class="cb"></div><div class="cb"></div>
+      </div>
+      <p class="helper">Koden är inte skiftlägeskänslig</p>
+      <div class="grow"></div>
+      <button class="btn btn-p" disabled>Anslut</button>
+      <button class="btn btn-g">Har du ingen kod?</button>
+    </div>
+  </div></div>
+  <div class="cap"><b>1 · Anslutning</b><span>Segmenterade kodrutor istället för ett tomt fält — mycket tydligare på mobil.</span></div>
+</div>
+
+<!-- ============ 2. DEVICE ROLE ============ -->
+<div class="slot">
+  <div class="phone"><div class="notch"></div><div class="screen">
+    <div class="statusbar"><span>14:23</span><span>▮▮▮ ⌁ 87%</span></div>
+    <div class="pad">
+      <p class="eyebrow">// Öland 2026 — Etapp 1</p>
+      <h1 class="h1">Vad ska den här mobilen göra?</h1>
+      <p class="sub">En mobil per lag är navigatör. Alla andra är medlemmar.</p>
+
+      <button class="opt sel">
+        <div class="opt-i" style="background:color-mix(in srgb,var(--c-cyan) 16%,transparent)">🧭</div>
+        <div><b>Navigatör</b><p>Lagets spelenhet — GPS, karta, kompass och uppdrag. Endast en per lag.</p></div>
+        <span class="tick">✓</span>
+      </button>
+
+      <button class="opt">
+        <div class="opt-i" style="background:color-mix(in srgb,var(--c-violet) 16%,transparent)">🎭</div>
+        <div><b>Medlem</b><p>Din egen mobil — se din hemliga roll och följ lagets rutt.</p></div>
+      </button>
+
+      <div class="grow"></div>
+      <button class="btn btn-p">Fortsätt som navigatör</button>
+      <button class="btn btn-g">⇄ Byt operation</button>
+    </div>
+  </div></div>
+  <div class="cap"><b>2 · Enhetsroll</b><span>Valet blir markerat innan man går vidare — inget oåterkalleligt tryck.</span></div>
+</div>
+
+<!-- ============ 3. ROLE REVEAL ============ -->
+<div class="slot">
+  <div class="phone"><div class="notch"></div><div class="screen">
+    <div class="statusbar"><span>14:25</span><span>▮▮▮ ⌁ 86%</span></div>
+    <div class="pad" style="padding:14px">
+      <div class="rolecard">
+        <div class="role-em">🃏</div>
+        <div class="role-lbl">PERSONALAKT // DEKRYPTERAD</div>
+        <h1 class="role-nm">JOKERN</h1>
+        <p class="role-tx">Du spelar med Lag Blå som vanligt — men du har fältutrustning de andra saknar. Hur du använder den är ditt beslut.</p>
+        <div class="dual">
+          <div class="help"><b>STÖTTA</b><span>Lyft ditt eget lag</span></div>
+          <div class="harm"><b>STÖR</b><span>Sätt käppar i hjulen</span></div>
+        </div>
+        <div class="warn-pill">🤝 Ditt lag vet vem du är · övriga lag gissar</div>
+      </div>
+      <button class="btn btn-p" style="margin-top:14px">Öppna jokerkonsolen</button>
+      <button class="btn btn-g">Till kartan →</button>
+    </div>
+  </div></div>
+  <div class="cap"><b>3 · Rollkortet</b><span>JOKERN ersätter SABOTÖR. Kortet visar båda riktningarna direkt — stötta eller stör — och att rollen är öppen inom laget.</span></div>
+</div>
+
+<!-- ============ 4. NAVIGATOR HUD ============ -->
+<div class="slot">
+  <div class="phone"><div class="notch"></div><div class="screen">
+    <div class="statusbar"><span>14:41</span><span>▮▮▮ ⌁ 81%</span></div>
+    <div class="appbar">
+      <div class="ab-logo">🧭</div>
+      <div class="ab-t"><b style="color:var(--c-cyan)">Lag Blå</b><span>NAVIGATÖR · GPS AKTIV</span></div>
+      <div class="icobtn">?</div>
+      <div class="icobtn">💬<span class="badge-n">2</span></div>
+    </div>
+    <div class="maparea">
+      <svg viewBox="0 0 320 400" preserveAspectRatio="xMidYMid slice">
+        <g stroke="var(--map-line)" stroke-width="1.4" fill="none">
+          <path d="M-10 90 L330 76"/><path d="M-10 210 L330 226"/><path d="M-10 330 L330 314"/>
+          <path d="M70 -10 L84 410"/><path d="M190 -10 L176 410"/><path d="M280 -10 L292 410"/>
+        </g>
+        <path d="M60 340 C110 290, 100 230, 165 205 S250 170, 268 118"
+          stroke="#38bdf8" stroke-width="4" fill="none" stroke-linecap="round" opacity=".9"/>
+        <circle cx="268" cy="118" r="20" fill="#38bdf8" opacity=".2">
+          <animate attributeName="r" values="16;30;16" dur="2.2s" repeatCount="indefinite"/></circle>
+        <circle cx="268" cy="118" r="10" fill="#38bdf8" stroke="#fff" stroke-width="3"/>
+        <circle cx="165" cy="205" r="8" fill="#4ade80" stroke="#fff" stroke-width="2.5"/>
+        <circle cx="60" cy="340" r="8" fill="#4ade80" stroke="#fff" stroke-width="2.5"/>
+      </svg>
+      <div class="progdots">
+        <span class="pd done"></span><span class="pd done"></span><span class="pd now"></span>
+        <span class="pd"></span><span class="pd"></span>
+      </div>
+      <div class="compass"><div class="needle"></div><div class="chead">NNÖ · 38°</div></div>
+      <div class="fab">📍</div>
+    </div>
+    <div class="sheet">
+      <div class="grab"></div>
+      <div class="tgt-row">
+        <div>
+          <div class="tgt-lbl">NÄSTA MÅL · 3 AV 5</div>
+          <div class="tgt-nm">Byxelkrok hamn</div>
+          <div class="tgt-city">📍 Böda · Norra Öland</div>
+        </div>
+        <div class="dist"><b>4.2</b><span>KM KVAR</span></div>
+      </div>
+      <div class="crew">
+        <div class="crewchip"><span class="e">🚗</span><div class="n"><b>Erik</b><span>Förare</span></div></div>
+        <div class="crewchip"><span class="e">🧭</span><div class="n"><b>Anna</b><span>Navigatör</span></div></div>
+      </div>
+    </div>
+  </div></div>
+  <div class="cap"><b>4 · Navigatörens hemskärm</b><span>Nyckelskärmen. Avståndet blir hjältesiffra, framstegsprickar högst upp, besättning som chips — istället för dagens "TARGET:"-debugrader.</span></div>
+</div>
+
+<!-- ============ 5. CHECKPOINT ============ -->
+<div class="slot">
+  <div class="phone"><div class="notch"></div><div class="screen">
+    <div class="statusbar"><span>15:04</span><span>▮▮▮ ⌁ 78%</span></div>
+    <div class="cp-hero"><span class="em">🎯</span><span class="pts-pill">+25 P</span></div>
+    <div class="pad" style="padding-top:0;margin-top:-18px">
+      <p class="eyebrow" style="margin-bottom:6px">FÄLTUPPDRAG · CHECKPOINT 3</p>
+      <h1 class="h1" style="font-size:20px">Ni är framme</h1>
+      <h2 class="h2" style="color:var(--c-cyan)">Byxelkrok hamn</h2>
+      <p class="sub" style="margin-bottom:14px">Hitta den röda fiskeboden längst ut på piren. Hela laget ska synas i bilden — inklusive föraren.</p>
+
+      <div class="photo-box done">
+        <span class="e">✅</span>
+        <b>Bild skickad</b>
+        <span>Tryck för att ta om</span>
+      </div>
+
+      <div class="grow"></div>
+      <button class="btn btn-lime">Slutför uppdrag →</button>
+    </div>
+  </div></div>
+  <div class="cap"><b>5 · Checkpoint</b><span>Poängen syns direkt, bilduppladdningen får en riktig drop-zone med tydligt klar-läge.</span></div>
+</div>
+
+<!-- ============ 6. JOKER CONSOLE ============ -->
+<div class="slot">
+  <div class="phone"><div class="notch"></div><div class="screen">
+    <div class="statusbar"><span>15:12</span><span>▮▮▮ ⌁ 76%</span></div>
+    <div class="appbar">
+      <div class="ab-logo" style="background:linear-gradient(135deg,var(--c-violet),var(--c-amber))">🃏</div>
+      <div class="ab-t"><b>Jokerkonsol</b><span>MAJA · LAG BLÅ</span></div>
+      <div class="memb-badge" style="background:color-mix(in srgb,var(--c-violet) 16%,transparent);color:var(--c-violet)">🃏 JOKER</div>
+    </div>
+    <div class="pad" style="padding:16px;overflow-y:auto">
+
+      <div class="segtabs">
+        <button class="on help">🛡 Stötta oss</button>
+        <button>🎯 Stör dem</button>
+      </div>
+
+      <div class="cooldown">
+        <b>07:41</b>
+        <span>Delad nedkylning — gäller både stötta och stör</span>
+      </div>
+
+      <p class="eyebrow">Stötta Lag Blå</p>
+
+      <div class="abil help">
+        <div class="abil-i">🛡</div>
+        <div class="abil-b"><b>Motmedel</b><span>5 min immunitet · 20 p</span>
+          <div class="chg"><i></i><i></i></div></div>
+        <button class="fire help" disabled>07:41</button>
+      </div>
+
+      <div class="abil help">
+        <div class="abil-i">🔭</div>
+        <div class="abil-b"><b>Spaning</b><span>Se alla lag 60 s · 15 p</span>
+          <div class="chg"><i></i><i class="used"></i></div></div>
+        <button class="fire help" disabled>07:41</button>
+      </div>
+
+      <p class="eyebrow" style="margin-top:18px">Stör annat lag</p>
+      <div class="selrow">
+        <button>🔴 RÖD</button><button class="on">🟢 GRÖN</button><button>🟡 GUL</button>
+      </div>
+
+      <div class="abil">
+        <div class="abil-i">🎯</div>
+        <div class="abil-b"><b>Flytta mål</b><span>5 min · 25 p</span>
+          <div class="chg"><i></i><i class="used"></i></div></div>
+        <button class="fire" disabled>07:41</button>
+      </div>
+
+      <div class="abil">
+        <div class="abil-i">📡</div>
+        <div class="abil-b"><b>Lås skärm</b><span>60 s · 20 p</span>
+          <div class="chg"><i></i><i></i></div></div>
+        <button class="fire" disabled>07:41</button>
+      </div>
+
+      <div class="abil spent">
+        <div class="abil-i">📻</div>
+        <div class="abil-b"><b>Falsk sändning</b><span>Slut på laddningar</span>
+          <div class="chg"><i class="used"></i><i class="used"></i></div></div>
+        <button class="fire" disabled>—</button>
+      </div>
+    </div>
+  </div></div>
+  <div class="cap"><b>6 · Jokerkonsol</b><span>Två lägen i samma konsol. Den delade nedkylningen ligger överst så valet blir tydligt: stötta oss eller störa dem — inte båda.</span></div>
+</div>
+
+<!-- ============ 7. RED LOCK ============ -->
+<div class="slot">
+  <div class="phone"><div class="notch"></div><div class="screen">
+    <div class="statusbar" style="color:rgba(255,255,255,.6)"><span>15:20</span><span>▮▮▮ ⌁ 74%</span></div>
+    <div class="lock">
+      <span class="em">🚨</span>
+      <h1>Signalen bröts</h1>
+      <p>Navigatören lämnade appen. Uppdraget är låst tills strafftiden är slut.</p>
+      <div class="ring"><div>0:23</div></div>
+      <span class="penalty">−30 P · ÖVERTRÄDELSE 2 AV 3</span>
+    </div>
+  </div></div>
+  <div class="cap"><b>7 · Fusklås</b><span>Nedräkningen blir en ring man kan följa istället för bara en siffra. Fortfarande obehaglig — men begriplig.</span></div>
+</div>
+
+<!-- ============ 8. MEMBER ============ -->
+<div class="slot">
+  <div class="phone"><div class="notch"></div><div class="screen">
+    <div class="statusbar"><span>15:26</span><span>▮▮▮ ⌁ 71%</span></div>
+    <div class="appbar">
+      <div class="ab-logo" style="background:linear-gradient(135deg,#38bdf8,#0ea5e9)">B</div>
+      <div class="ab-t"><b>Maja Ek</b><span style="color:var(--c-cyan)">LAG BLÅ · MEDLEM</span></div>
+      <div class="memb-badge" style="background:color-mix(in srgb,var(--c-violet) 16%,transparent);color:var(--c-violet)">🃏</div>
+    </div>
+    <div class="maparea" style="flex:none;height:210px">
+      <svg viewBox="0 0 320 210" preserveAspectRatio="xMidYMid slice">
+        <g stroke="var(--map-line)" stroke-width="1.4" fill="none">
+          <path d="M-10 60 L330 48"/><path d="M-10 150 L330 162"/>
+          <path d="M90 -10 L102 220"/><path d="M230 -10 L218 220"/>
+        </g>
+        <path d="M40 175 C90 140, 120 120, 170 105 S250 80, 280 45"
+          stroke="#38bdf8" stroke-width="3.5" fill="none" stroke-linecap="round" opacity=".9"/>
+        <circle cx="170" cy="105" r="14" fill="#38bdf8" opacity=".22">
+          <animate attributeName="r" values="11;22;11" dur="2.2s" repeatCount="indefinite"/></circle>
+        <circle cx="170" cy="105" r="8" fill="#38bdf8" stroke="#fff" stroke-width="2.5"/>
+        <circle cx="40" cy="175" r="7" fill="#4ade80" stroke="#fff" stroke-width="2.5"/>
+        <circle cx="280" cy="45" r="7" fill="#fbbf24" stroke="#fff" stroke-width="2.5"/>
+      </svg>
+    </div>
+    <div class="pad" style="padding:16px">
+      <p class="eyebrow">Poängliga</p>
+      <div class="leader me"><span class="r">1</span><span class="n">Lag Blå</span><span class="p" style="color:var(--c-amber)">185</span></div>
+      <div class="leader"><span class="r">2</span><span class="n">Lag Grön</span><span class="p">160</span></div>
+      <div class="leader"><span class="r">3</span><span class="n">Lag Röd</span><span class="p">115</span></div>
+      <div class="leader"><span class="r">4</span><span class="n">Lag Gul</span><span class="p">90</span></div>
+      <div class="grow"></div>
+      <button class="btn btn-p">🃏 Öppna jokerkonsolen</button>
+    </div>
+  </div></div>
+  <div class="cap"><b>8 · Medlemsvy</b><span>Medlemmar har idag mest en tom karta. Här får de poängligan också — något att följa under resan.</span></div>
+</div>
+
+</div>
+
+<div class="theme-switch">
+  <button class="on" onclick="setT('dark',this)">☾ Mörkt</button>
+  <button onclick="setT('light',this)">☀︎ Ljust</button>
+</div>
+
+<script>
+function setT(t,el){
+  document.body.dataset.theme=t;
+  document.querySelectorAll('.theme-switch button').forEach(b=>b.classList.remove('on'));
+  el.classList.add('on');
+}
+</script>
+</body>
+</html>

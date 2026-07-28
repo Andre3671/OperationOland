@@ -41,13 +41,14 @@
         v-if="teamReady && initialCenter"
         v-show="!isOverlayActive"
         :center="initialCenter"
-        :zoom="14"
+        :zoom="initialZoom"
         :visible="!isOverlayActive"
         :checkpoints="displayCheckpoints"
         :activeIndex="activeIndex"
         :teamColor="teamColor"
         :team="teamName"
-        :ownPosition="isExplore ? userLocation : null"
+        :ownPosition="(isExplore || selfLocateActive) ? userLocation : null"
+        :rivalPositions="rivalPositions"
       />
       <div v-else-if="teamReady && !initialCenter && !isOverlayActive" class="gps-wait">
         <div class="gps-wait-spinner"></div>
@@ -73,10 +74,6 @@
          no GPS binding, no anti-cheat). Persisted per device. -->
     <div v-else-if="!deviceRole" class="device-gate">
       <div class="device-frame">
-        <div class="corner top-left"></div>
-        <div class="corner top-right"></div>
-        <div class="corner bottom-left"></div>
-        <div class="corner bottom-right"></div>
         <div class="device-gate-head">VÄLJ ENHETSROLL</div>
         <p class="device-gate-sub">Vad ska den här mobilen användas till?</p>
         <button class="device-option" @click="chooseDeviceRole('navigator')">
@@ -87,7 +84,7 @@
         <button class="device-option" @click="chooseDeviceRole('member')">
           <span class="device-opt-icon">🎭</span>
           <span class="device-opt-title">MEDLEM</span>
-          <span class="device-opt-sub">{{ isExplore ? 'Din egen mobil — följ med på färden.' : 'Din egen mobil — se din hemliga roll (agent eller sabotör).' }}</span>
+          <span class="device-opt-sub">{{ isExplore ? 'Din egen mobil — följ med på färden.' : 'Din egen mobil — se din hemliga roll (agent eller joker).' }}</span>
         </button>
       </div>
     </div>
@@ -96,10 +93,6 @@
     <template v-else-if="deviceRole === 'member'">
       <div v-if="isExplore" class="holding-screen">
         <div class="holding-frame">
-          <div class="corner top-left"></div>
-          <div class="corner top-right"></div>
-          <div class="corner bottom-left"></div>
-          <div class="corner bottom-right"></div>
           <div class="holding-header">
             <span class="system-status">ENHETSROLL: MEDLEM</span>
             <div class="tactical-type">UPPTÄCKTSFÄRD</div>
@@ -133,14 +126,14 @@
             <span class="member-name">{{ memberName }}</span>
           </div>
           <button class="member-badge" :class="{ 'is-sab': memberIsSaboteur }" @click="memberRoleOpen = true" title="Visa ditt rollkort">
-            {{ memberIsSaboteur ? '🕵️ SABOTÖR' : '🎖 AGENT' }}
+            {{ memberIsSaboteur ? '🃏 JOKER' : '🎖 AGENT' }}
           </button>
         </header>
         <main class="member-map-main">
           <MapView
             :key="memberMapKey"
             :center="memberCenter"
-            :zoom="11"
+            :zoom="memberZoom"
             :visible="true"
             :checkpoints="memberCheckpoints"
             :activeIndex="memberActiveIndex"
@@ -148,7 +141,7 @@
             :team="memberTeam ? memberTeam + '-member' : 'member'"
           />
         </main>
-        <button v-if="memberIsSaboteur" class="member-sab-btn" @click="memberRoleOpen = true">🕵️ SABOTAGE</button>
+        <button v-if="memberIsSaboteur" class="member-sab-btn" @click="memberRoleOpen = true">🃏 JOKERKONSOL</button>
         <button class="switch-op-btn member-id-btn" @click="memberChangeIdentity">⇄ BYT LAG / NAMN</button>
         <RoleReveal
           v-if="memberRoleOpen"
@@ -162,10 +155,6 @@
 
     <div v-else-if="!isOperationActive && !teamReady" class="holding-screen">
       <div class="holding-frame">
-        <div class="corner top-left"></div>
-        <div class="corner top-right"></div>
-        <div class="corner bottom-left"></div>
-        <div class="corner bottom-right"></div>
 
         <div class="holding-header">
           <span class="system-status">LINK-STATE: STANDBY</span>
@@ -189,7 +178,7 @@
 
         <div class="holding-footer">
           <div class="scanner-line"></div>
-          <span class="coordinates">56.8000N, 16.6000E // ÖLAND</span>
+          <span class="coordinates">{{ standbyCoordinates }}</span>
         </div>
       </div>
     </div>
@@ -268,31 +257,68 @@
       @unlock="completeMission"
     />
 
-    <!-- Mission HUD -->
-    <div v-if="teamReady" class="sim-debug-panel">
-      <div class="debug-row" v-if="isExplore">
-        <span class="debug-label">LÄGE:</span>
-        <span class="debug-value" style="color: #00ccff;">UTFORSKNING</span>
+    <!-- Mission HUD. Bottom sheet on phones; becomes a side rail on short wide
+         screens (phone landscape, tablet on its side) so it doesn't swallow
+         the map. Distance is the hero number — it's the one thing the crew
+         glances at while moving. -->
+    <div v-if="teamReady" class="mission-hud">
+      <div class="hud-grab"></div>
+
+      <div class="hud-progress" v-if="checkpointTotal">
+        <span
+          v-for="n in checkpointTotal"
+          :key="n"
+          class="hud-dot"
+          :class="{ done: n - 1 < checkpointsDone, now: n - 1 === activeIndex && n - 1 >= checkpointsDone }"
+        ></span>
       </div>
-      <div class="debug-row">
-        <span class="debug-label">TARGET:</span>
-        <span class="debug-value">
-          <span class="target-name">{{ activeCheckpoint?.name || activeCheckpoint?.title }}</span>
-          <span v-if="targetCityLabel" class="target-city">📍 {{ targetCityLabel }}</span>
-          <span v-if="activeCheckpoint?.region" class="region-tag">{{ activeCheckpoint.region }}</span>
-          <span class="distance-tag">{{ distanceLabel }}</span>
-          <span v-if="targetClock" class="clock-tag">🕒 {{ targetClock }}</span>
-        </span>
+
+      <div class="hud-main">
+        <div class="hud-target">
+          <div class="hud-eyebrow">
+            <span v-if="isExplore" class="hud-mode">🌿 Utforskning</span>
+            <span v-else>Nästa mål</span>
+            <span v-if="checkpointTotal"> · {{ Math.min(checkpointsDone + 1, checkpointTotal) }} av {{ checkpointTotal }}</span>
+          </div>
+          <div class="hud-name">{{ activeCheckpoint?.name || activeCheckpoint?.title || '—' }}</div>
+          <div class="hud-sub">
+            <span v-if="targetCityLabel">📍 {{ targetCityLabel }}</span>
+            <span v-if="activeCheckpoint?.region">{{ activeCheckpoint.region }}</span>
+            <span v-if="targetClock">🕒 {{ targetClock }}</span>
+          </div>
+        </div>
+
+        <div class="hud-distance">
+          <b>{{ distanceValue }}</b>
+          <span>{{ distanceUnit }}</span>
+        </div>
       </div>
-      <div class="debug-row" v-if="currentCrew || teamSaboteurName">
-        <span class="debug-label">BESÄTTNING:</span>
-        <span class="debug-value">
-          <template v-if="currentCrew">🚗 {{ currentCrew.driver }} &nbsp;·&nbsp; 🧭 {{ currentCrew.navigator }}</template><template v-if="teamSaboteurName"><template v-if="currentCrew"> &nbsp;·&nbsp; </template>🕵️ {{ teamSaboteurName }}</template>
-        </span>
+
+      <div class="hud-crew" v-if="currentCrew || teamSaboteurName">
+        <div class="crew-chip" v-if="currentCrew">
+          <span class="crew-ico">🚗</span>
+          <span class="crew-txt"><b>{{ currentCrew.driver }}</b><span>Förare</span></span>
+        </div>
+        <div class="crew-chip" v-if="currentCrew">
+          <span class="crew-ico">🧭</span>
+          <span class="crew-txt"><b>{{ currentCrew.navigator }}</b><span>Navigatör</span></span>
+        </div>
+        <div class="crew-chip is-joker" v-if="teamSaboteurName">
+          <span class="crew-ico">🃏</span>
+          <span class="crew-txt"><b>{{ teamSaboteurName }}</b><span>Joker</span></span>
+        </div>
       </div>
-      <div class="debug-row" v-if="isOverlayActive">
-        <span class="debug-alert">TARGET REACHED</span>
+
+      <!-- Your own joker's support, so the crew knows why the map suddenly
+           shows more than usual — and that it's temporary. -->
+      <div class="hud-boosts" v-if="activeBoosts.length">
+        <span v-if="shieldActive" class="boost-chip is-shield">🛡 Skyddade</span>
+        <span v-if="selfLocateActive" class="boost-chip">📍 Er position</span>
+        <span v-if="reconActive" class="boost-chip">🔭 Spaning</span>
+        <span class="boost-timer">{{ boostSecondsLeft }}s</span>
       </div>
+
+      <div class="hud-alert" v-if="isOverlayActive">Ni är framme</div>
     </div>
   </div>
 </template>
@@ -319,12 +345,17 @@ import { getJoinCode, getJoinOperationName, clearJoinCode } from '../lib/syncCli
 import { colorForTeam } from '../lib/teamSlots'
 import { crewForLeg } from '../lib/roleRotation'
 
+// Last-resort map camera when nothing at all is known: no route from the admin,
+// no GPS fix, no stored position. Deliberately NOT a real place — the map should
+// look empty rather than claim the operation is somewhere it isn't.
+const WORLD_CENTER = [20, 0]
+
 // Core Reactive State. Empty string until a team is picked — useGeofencing
 // uses this to decide whether to broadcast GPS to the store.
 const teamRef = ref(null)
 const teamName = computed(() => teamRef.value?.toLowerCase() || '')
 
-const { getTeamPosition, updateTeamPosition, recordTeamStart, isSimulationMode, isOperationActive, walkingMode, teams, setTeamActive, teamCheating, chatMessages, sendChatMessage, claimSlot, claimSlotKey, connectionStatus, mode, sabotageEffects, teamRosters, globalStart } = useSimulationStore()
+const { getTeamPosition, updateTeamPosition, recordTeamStart, isSimulationMode, isOperationActive, teams, setTeamActive, teamCheating, chatMessages, sendChatMessage, claimSlot, claimSlotKey, connectionStatus, mode, sabotageEffects, teamRosters, globalStart, history, teamProgress } = useSimulationStore()
 
 // Per-operation play mode. Explore = relaxed sightseeing: no anti-cheat, own
 // position on the map, info stops instead of gated missions.
@@ -412,14 +443,33 @@ const memberIsSaboteur = computed(() => {
 })
 
 // Members have no GPS fix — center on the team's first checkpoint, else the
-// global start, else the Öland default.
+// global start. If the admin hasn't placed anything yet there is nothing
+// meaningful to show, so fall back to a wide world view rather than pretending
+// the operation is on Öland.
 const memberCenter = computed(() => {
   const cps = memberCheckpoints.value
   const start = cps.find(cp => cp.type === 'start') || cps[0]
   if (start && Number.isFinite(start.lat) && Number.isFinite(start.lng)) return [start.lat, start.lng]
   const gs = globalStart.value
   if (gs && Number.isFinite(gs.lat) && Number.isFinite(gs.lng)) return [gs.lat, gs.lng]
-  return [56.8, 16.6]
+  return WORLD_CENTER
+})
+
+// Zoomed right out when we're on the world fallback — a zoom-11 view of the
+// Atlantic is more confusing than an obviously "nothing here yet" map.
+const memberZoom = computed(() => (memberCenter.value === WORLD_CENTER ? 3 : 11))
+
+// Standby footer readout. Shows the operation's real start coordinates once the
+// admin has placed them, instead of the old hardcoded Öland pair.
+const standbyCoordinates = computed(() => {
+  const gs = globalStart.value
+  if (gs && Number.isFinite(gs.lat) && Number.isFinite(gs.lng)) {
+    const ns = gs.lat >= 0 ? 'N' : 'S'
+    const ew = gs.lng >= 0 ? 'E' : 'W'
+    const place = (gs.name || '').trim()
+    return `${Math.abs(gs.lat).toFixed(4)}${ns}, ${Math.abs(gs.lng).toFixed(4)}${ew}${place ? ` // ${place.toUpperCase()}` : ''}`
+  }
+  return 'KOORDINATER EJ TILLDELADE'
 })
 
 // Map.vue intentionally never re-centers on prop changes, so remount it when
@@ -556,11 +606,50 @@ const { locked, penaltySeconds } = useAntiCheat(teamName, isAntiCheatDisabled)
 const nowTick = ref(Date.now())
 let sabTickTimer = null
 
-const activeSabotage = computed(() => {
+// Supportive joker abilities land on the joker's OWN team, so they arrive
+// with targetTeam === us just like an attack does. They must never reach
+// SabotageFx, which would render "you've been sabotaged" for something your
+// own team paid 10–20 points for. Effects saved before `direction` existed
+// are classified by type.
+const SELF_FX_TYPES = new Set(['counter-measure', 'recon', 'self-locate'])
+const isSelfFx = (e) => e.direction === 'self' || SELF_FX_TYPES.has(e.type)
+
+const effectsOnUs = computed(() => {
   if (!teamName.value || isExplore.value) return []
   return (sabotageEffects.value || []).filter(e =>
     e && e.targetTeam === teamName.value && Number(e.expiresAt) > nowTick.value
   )
+})
+
+// Hostile only — this is what SabotageFx renders and what the "you were
+// sabotaged" notice watches.
+const activeSabotage = computed(() => effectsOnUs.value.filter(e => !isSelfFx(e)))
+
+// Our own joker's support, currently running.
+const activeBoosts = computed(() => effectsOnUs.value.filter(isSelfFx))
+const shieldActive = computed(() => activeBoosts.value.some(e => e.type === 'counter-measure'))
+const reconActive = computed(() => activeBoosts.value.some(e => e.type === 'recon'))
+const selfLocateActive = computed(() => activeBoosts.value.some(e => e.type === 'self-locate'))
+
+// Seconds left on the shortest-running boost — drives the HUD countdown.
+const boostSecondsLeft = computed(() => {
+  if (!activeBoosts.value.length) return 0
+  const soonest = Math.min(...activeBoosts.value.map(e => Number(e.expiresAt)))
+  return Math.max(0, Math.ceil((soonest - nowTick.value) / 1000))
+})
+
+// SPANING: rival teams' last known positions. Note these already travel in
+// every player's state blob — the ability reveals them, it does not fetch
+// them. See docs/JOKERN.md.
+const rivalPositions = computed(() => {
+  if (!reconActive.value) return []
+  return (history.value || [])
+    .filter(h => h && h.team && h.team !== teamName.value && Array.isArray(h.path) && h.path.length)
+    .map(h => {
+      const last = h.path[h.path.length - 1]
+      return { team: h.team, lat: last.lat, lng: last.lng, color: colorForTeam(h.team), name: teams.value?.[h.team]?.name || h.team.toUpperCase() }
+    })
+    .filter(p => Number.isFinite(p.lat) && Number.isFinite(p.lng))
 })
 
 const fakeTargetFx = computed(() => activeSabotage.value.find(e => e.type === 'fake-target') || null)
@@ -642,6 +731,27 @@ const distanceLabel = computed(() => {
   return `${(d / 1000).toFixed(1)} km`
 })
 
+// Distance split so the number can be typeset large and the unit small — the
+// crew reads this at a glance from the passenger seat.
+const distanceValue = computed(() => {
+  const parts = distanceLabel.value.split(' ')
+  return parts[0] || '—'
+})
+const distanceUnit = computed(() => {
+  const parts = distanceLabel.value.split(' ')
+  return parts.length > 1 ? (parts[1] === 'm' ? 'METER KVAR' : 'KM KVAR') : ''
+})
+
+const checkpointTotal = computed(() => checkpoints.value.length)
+
+// How many checkpoints are actually cleared. NOT activeIndex: that's clamped
+// to length-1 so it can address the current target, which meant a team that
+// finished the whole route still saw the last progress dot unfilled.
+const checkpointsDone = computed(() => {
+  const raw = Number(teamProgress.value?.[teamName.value]) || 0
+  return Math.min(raw, checkpointTotal.value)
+})
+
 const targetClock = computed(() => {
   const iso = activeCheckpoint.value?.arriveAt
   if (!iso) return ''
@@ -653,9 +763,10 @@ const targetClock = computed(() => {
 // The map sets its initial camera ONCE, then stays put (it doesn't follow the
 // team). Priority: the team's START checkpoint, so when the operation begins
 // the map opens on the starting point — then the first GPS fix, the team's last
-// known position, and finally the Öland default. After that the player is free
+// known position, and finally a wide world view. After that the player is free
 // to pan/zoom and switch map layers; the view is preserved across checkpoints.
 const initialCenter = ref(null)
+const initialZoom = ref(14)
 
 const startPoint = computed(() => {
   const start = checkpoints.value.find(cp => cp.type === 'start')
@@ -679,14 +790,19 @@ onMounted(() => {
   sabTickTimer = setInterval(() => { nowTick.value = Date.now() }, 1000)
   restoreTeamFromUrl()
   // Only if there's no start checkpoint at all (e.g. routes not configured):
-  // fall back to GPS, then last known position, then the Öland default.
+  // fall back to GPS, then last known position, then a wide world view.
   fallbackCenterTimer = setTimeout(() => {
     if (initialCenter.value) return
     if (userLocation.value) {
       initialCenter.value = [userLocation.value.lat, userLocation.value.lng]
     } else {
       const pos = getTeamPosition(teamName.value)
-      initialCenter.value = pos ? [pos.lat, pos.lng] : [56.8, 16.6]
+      if (pos) {
+        initialCenter.value = [pos.lat, pos.lng]
+      } else {
+        initialCenter.value = WORLD_CENTER
+        initialZoom.value = 3
+      }
     }
     stopInitialCenterWatch()
   }, 6000)
@@ -849,9 +965,9 @@ function sendTeamChat() {
   bottom: 12px;
   z-index: 9600; /* above holding screen (5000) and welcome overlay (2100) */
   background: rgba(0, 0, 0, 0.75);
-  border: 1px solid rgba(0, 204, 255, 0.35);
+  border: 1px solid color-mix(in srgb, var(--primary) 18%, transparent);
   color: #6db9cf;
-  font-family: 'JetBrains Mono', monospace;
+  font-family: var(--font-mono);
   font-size: 0.62rem;
   font-weight: 700;
   letter-spacing: 0.1em;
@@ -865,8 +981,8 @@ function sendTeamChat() {
 }
 
 .switch-op-btn:hover {
-  background: rgba(0, 204, 255, 0.12);
-  color: #00ccff;
+  background: color-mix(in srgb, var(--primary) 18%, transparent);
+  color: var(--primary);
 }
 
 /* Stacked fixed buttons above BYT OPERATION (bottom: 12px). */
@@ -882,7 +998,7 @@ function sendTeamChat() {
 .member-map {
   position: fixed;
   inset: 0;
-  background: #0a0a0a;
+  background: var(--bg);
   display: flex;
   flex-direction: column;
   z-index: 1900; /* below join gate/device gate, above the base layout */
@@ -896,8 +1012,8 @@ function sendTeamChat() {
   gap: 10px;
   padding: 10px 12px;
   background: rgba(0, 0, 0, 0.92);
-  border-bottom: 1px solid rgba(0, 204, 255, 0.2);
-  font-family: 'JetBrains Mono', monospace;
+  border-bottom: 1px solid color-mix(in srgb, var(--primary) 18%, transparent);
+  font-family: var(--font-mono);
 }
 
 .member-head-left {
@@ -919,7 +1035,7 @@ function sendTeamChat() {
 }
 
 .member-name {
-  color: #888;
+  color: var(--text-2);
   font-size: 0.72rem;
   letter-spacing: 0.05em;
   white-space: nowrap;
@@ -931,7 +1047,7 @@ function sendTeamChat() {
   flex: 0 0 auto;
   background: rgba(0, 255, 136, 0.08);
   border: 1px solid rgba(0, 255, 136, 0.45);
-  color: #00ff88;
+  color: var(--c-lime);
   font-family: inherit;
   font-size: 0.68rem;
   font-weight: 800;
@@ -961,7 +1077,7 @@ function sendTeamChat() {
   background: rgba(20, 2, 6, 0.9);
   border: 1px solid #ff5566;
   color: #ff5566;
-  font-family: 'JetBrains Mono', monospace;
+  font-family: var(--font-mono);
   font-size: 0.78rem;
   font-weight: 800;
   letter-spacing: 0.14em;
@@ -991,13 +1107,13 @@ function sendTeamChat() {
 .device-gate {
   position: fixed;
   inset: 0;
-  background: #0a0a0a;
+  background: var(--bg);
   display: flex;
   align-items: center;
   justify-content: safe center;
   z-index: 2150; /* above welcome (2100), below join gate (2200) */
-  font-family: 'JetBrains Mono', 'Courier New', monospace;
-  color: #00ccff;
+  font-family: 'JetBrains Mono', var(--font-mono);
+  color: var(--primary);
   padding: 20px;
   overflow: auto;
 }
@@ -1008,8 +1124,8 @@ function sendTeamChat() {
   inset: 0;
   background: repeating-linear-gradient(
     0deg,
-    rgba(0, 204, 255, 0.025) 0px,
-    rgba(0, 204, 255, 0.025) 1px,
+    color-mix(in srgb, var(--primary) 18%, transparent) 0px,
+    color-mix(in srgb, var(--primary) 18%, transparent) 1px,
     transparent 1px,
     transparent 3px
   );
@@ -1019,25 +1135,17 @@ function sendTeamChat() {
 .device-frame {
   position: relative;
   width: 100%;
-  max-width: 480px;
+  max-width: var(--panel-max);
   padding: 36px 28px;
-  background: rgba(0, 0, 0, 0.88);
-  border: 1px solid rgba(0, 204, 255, 0.3);
-  box-shadow: 0 0 60px rgba(0, 204, 255, 0.18), inset 0 0 30px rgba(0, 204, 255, 0.04);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-lg);
   box-sizing: border-box;
+  border-radius: var(--r-xl);
 }
 
-.device-frame .corner {
-  position: absolute;
-  width: 16px;
-  height: 16px;
-  border: 2px solid #00ccff;
-  opacity: 0.8;
-}
-.device-frame .top-left     { top: 6px;    left: 6px;    border-right: none;  border-bottom: none; }
-.device-frame .top-right    { top: 6px;    right: 6px;   border-left: none;   border-bottom: none; }
-.device-frame .bottom-left  { bottom: 6px; left: 6px;    border-right: none;  border-top: none; }
-.device-frame .bottom-right { bottom: 6px; right: 6px;   border-left: none;   border-top: none; }
+.device-frame .corner { display: none; }
+
 
 .device-gate-head {
   font-size: 1.2rem;
@@ -1048,7 +1156,7 @@ function sendTeamChat() {
 }
 
 .device-gate-sub {
-  color: #888;
+  color: var(--text-2);
   font-size: 0.8rem;
   text-align: center;
   margin: 0 0 22px;
@@ -1061,8 +1169,8 @@ function sendTeamChat() {
   align-items: center;
   gap: 6px;
   background: transparent;
-  border: 1px solid rgba(0, 204, 255, 0.4);
-  color: #00ccff;
+  border: 1px solid color-mix(in srgb, var(--primary) 18%, transparent);
+  color: var(--primary);
   font-family: inherit;
   padding: 18px 14px;
   margin-bottom: 14px;
@@ -1072,8 +1180,8 @@ function sendTeamChat() {
 }
 
 .device-option:hover {
-  background: rgba(0, 204, 255, 0.1);
-  box-shadow: 0 0 18px rgba(0, 204, 255, 0.35);
+  background: color-mix(in srgb, var(--primary) 18%, transparent);
+  box-shadow: 0 0 18px color-mix(in srgb, var(--primary) 18%, transparent);
 }
 
 .device-opt-icon { font-size: 1.9rem; }
@@ -1106,7 +1214,7 @@ function sendTeamChat() {
 }
 
 .team-name-display {
-  color: #00ccff;
+  color: var(--primary);
   font-weight: 700;
   letter-spacing: 0.05em;
   text-transform: uppercase;
@@ -1118,9 +1226,9 @@ function sendTeamChat() {
 
 .nav-mini-btn {
   background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(0, 204, 255, 0.35);
-  color: #00ccff;
-  font-family: 'JetBrains Mono', monospace;
+  border: 1px solid color-mix(in srgb, var(--primary) 18%, transparent);
+  color: var(--primary);
+  font-family: var(--font-mono);
   font-size: 0.65rem;
   font-weight: 700;
   letter-spacing: 0.08em;
@@ -1130,7 +1238,7 @@ function sendTeamChat() {
 }
 
 .nav-mini-btn:hover {
-  background: rgba(0, 204, 255, 0.12);
+  background: color-mix(in srgb, var(--primary) 18%, transparent);
 }
 
 .team-chat-panel {
@@ -1141,9 +1249,9 @@ function sendTeamChat() {
   width: min(360px, calc(100vw - 24px));
   max-height: min(520px, calc(100vh - 90px));
   background: rgba(8, 10, 12, 0.96);
-  border: 1px solid rgba(0, 204, 255, 0.32);
-  color: #eee;
-  font-family: 'JetBrains Mono', monospace;
+  border: 1px solid color-mix(in srgb, var(--primary) 18%, transparent);
+  color: var(--text);
+  font-family: var(--font-mono);
   display: flex;
   flex-direction: column;
   box-shadow: 0 0 24px rgba(0, 0, 0, 0.55);
@@ -1154,8 +1262,8 @@ function sendTeamChat() {
   align-items: center;
   justify-content: space-between;
   padding: 10px 12px;
-  border-bottom: 1px solid #222;
-  color: #00ccff;
+  border-bottom: 1px solid var(--border);
+  color: var(--primary);
   font-size: 0.8rem;
   font-weight: 800;
   letter-spacing: 0.12em;
@@ -1164,7 +1272,7 @@ function sendTeamChat() {
 .team-chat-head button {
   background: transparent;
   border: none;
-  color: #888;
+  color: var(--text-2);
   font-size: 1.1rem;
   cursor: pointer;
 }
@@ -1178,14 +1286,14 @@ function sendTeamChat() {
 }
 
 .team-chat-message {
-  border: 1px solid #2a2a2a;
-  background: #111;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
   padding: 8px;
   border-radius: 4px;
 }
 
 .team-chat-message.is-own {
-  border-color: rgba(0, 204, 255, 0.45);
+  border-color: color-mix(in srgb, var(--primary) 18%, transparent);
 }
 
 .team-chat-message.is-admin {
@@ -1196,7 +1304,7 @@ function sendTeamChat() {
   display: flex;
   justify-content: space-between;
   gap: 10px;
-  color: #888;
+  color: var(--text-2);
   font-size: 0.62rem;
   text-transform: uppercase;
   margin-bottom: 4px;
@@ -1209,7 +1317,7 @@ function sendTeamChat() {
 }
 
 .team-chat-empty {
-  color: #666;
+  color: var(--text-3);
   font-size: 0.75rem;
   font-style: italic;
 }
@@ -1218,22 +1326,22 @@ function sendTeamChat() {
   display: flex;
   gap: 6px;
   padding: 10px;
-  border-top: 1px solid #222;
+  border-top: 1px solid var(--border);
 }
 
 .team-chat-form input {
   min-width: 0;
   flex: 1;
   background: #000;
-  border: 1px solid #333;
-  color: #fff;
+  border: 1px solid var(--border);
+  color: var(--text);
   padding: 9px;
   border-radius: 3px;
   font-family: inherit;
 }
 
 .team-chat-form button {
-  background: #00ccff;
+  background: var(--primary);
   color: #001016;
   border: none;
   padding: 9px 10px;
@@ -1243,86 +1351,15 @@ function sendTeamChat() {
 }
 
 .team-chat-form button:disabled {
-  background: #333;
-  color: #777;
-}
-
-.sim-debug-panel {
-  position: fixed;
-  bottom: 20px;
-  left: 20px;
-  /* Cap the width to the screen so a long checkpoint name + tags can't run off
-     the right edge; the value column wraps instead. */
-  max-width: calc(100vw - 40px);
-  box-sizing: border-box;
-  background: rgba(0, 0, 0, 0.8);
-  border: 1px solid #333;
-  padding: 10px;
-  font-family: 'JetBrains Mono', monospace;
-  font-size: 0.7rem;
-  z-index: 9000;
-  pointer-events: none;
-  color: #888;
-}
-
-.debug-row {
-  display: flex;
-  gap: 10px;
-  margin-bottom: 4px;
-}
-
-.debug-label {
-  color: #555;
-  flex: 0 0 60px;
-}
-
-.debug-value {
-  color: #00ff00;
-  flex: 1;
-  min-width: 0;
-  overflow-wrap: anywhere;
-}
-
-.target-name {
-  font-weight: 800;
+  background: var(--surface-3);
+  color: var(--text-3);
 }
 
 .target-title {
-  color: #888;
+  color: var(--text-2);
   font-size: 0.65rem;
   margin-left: 4px;
   text-transform: uppercase;
-}
-
-.target-city {
-  color: #ccc;
-  font-size: 0.68rem;
-  margin-left: 6px;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-}
-
-.distance-tag {
-  color: #ffcc00;
-  font-weight: 700;
-  font-variant-numeric: tabular-nums;
-  margin-left: 4px;
-}
-
-
-.clock-tag {
-  color: #ffcc00;
-  font-weight: 700;
-  font-variant-numeric: tabular-nums;
-  margin-left: 8px;
-}
-
-.region-tag {
-  color: #888;
-  font-size: 0.65rem;
-  margin: 0 4px;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
 }
 
 .conn-banner {
@@ -1388,7 +1425,7 @@ function sendTeamChat() {
   padding: 0 4px;
   border-radius: 8px;
   background: #ff3b3b;
-  color: #fff;
+  color: var(--text);
   font-size: 0.65rem;
   font-weight: 700;
   line-height: 16px;
@@ -1409,8 +1446,8 @@ function sendTeamChat() {
   align-items: center;
   justify-content: center;
   gap: 18px;
-  background: #0a0a0a;
-  color: #00ccff;
+  background: var(--bg);
+  color: var(--primary);
   z-index: 50;
 }
 
@@ -1418,26 +1455,20 @@ function sendTeamChat() {
   width: 48px;
   height: 48px;
   border-radius: 50%;
-  border: 3px solid rgba(0, 204, 255, 0.18);
-  border-top-color: #00ccff;
+  border: 3px solid color-mix(in srgb, var(--primary) 18%, transparent);
+  border-top-color: var(--primary);
   animation: gps-spin 1s linear infinite;
 }
 
 .gps-wait-text {
   letter-spacing: 0.2em;
   font-size: 0.85rem;
-  color: #888;
+  color: var(--text-2);
   text-transform: uppercase;
 }
 
 @keyframes gps-spin {
   to { transform: rotate(360deg); }
-}
-
-.debug-alert {
-  color: #ff3333;
-  font-weight: bold;
-  letter-spacing: 1px;
 }
 
 .holding-screen {
@@ -1446,14 +1477,14 @@ function sendTeamChat() {
   left: 0;
   right: 0;
   bottom: 0;
-  background: #0a0a0a;
+  background: var(--bg);
   display: flex;
   align-items: center;
   justify-content: safe center;
   z-index: 5000;
   padding: 20px;
   box-sizing: border-box;
-  font-family: 'JetBrains Mono', 'Courier New', monospace;
+  font-family: 'JetBrains Mono', var(--font-mono);
   overflow: auto;
 }
 
@@ -1463,8 +1494,8 @@ function sendTeamChat() {
   inset: 0;
   background: repeating-linear-gradient(
     0deg,
-    rgba(0, 204, 255, 0.025) 0px,
-    rgba(0, 204, 255, 0.025) 1px,
+    color-mix(in srgb, var(--primary) 18%, transparent) 0px,
+    color-mix(in srgb, var(--primary) 18%, transparent) 1px,
     transparent 1px,
     transparent 3px
   );
@@ -1474,28 +1505,20 @@ function sendTeamChat() {
 .holding-frame {
   position: relative;
   width: 100%;
-  max-width: 500px;
-  background: #0a0a0a;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-left: 4px solid #00ccff;
-  color: #00ccff;
+  max-width: var(--panel-max);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--primary);
+  color: var(--primary);
   padding: 40px;
   box-sizing: border-box;
-  box-shadow: 0 0 50px rgba(0, 0, 0, 0.5), 0 0 60px rgba(0, 204, 255, 0.12);
+  box-shadow: var(--shadow-lg);
   overflow: hidden;
+  border-radius: var(--r-xl);
 }
 
-.holding-frame .corner {
-  position: absolute;
-  width: 15px;
-  height: 15px;
-  border: 2px solid currentColor;
-  opacity: 0.5;
-}
-.holding-frame .top-left { top: 10px; left: 10px; border-right: none; border-bottom: none; }
-.holding-frame .top-right { top: 10px; right: 10px; border-left: none; border-bottom: none; }
-.holding-frame .bottom-left { bottom: 10px; left: 10px; border-right: none; border-top: none; }
-.holding-frame .bottom-right { bottom: 10px; right: 10px; border-left: none; border-top: none; }
+.holding-frame .corner { display: none; }
+
 
 .holding-header {
   display: flex;
@@ -1542,21 +1565,21 @@ function sendTeamChat() {
   width: 100%;
   height: 1px;
   margin-bottom: 25px;
-  background: linear-gradient(90deg, #00ccff, transparent);
+  background: linear-gradient(90deg, var(--primary), transparent);
 }
 
 .holding-body .mission-challenge {
   font-size: 1.05rem;
   line-height: 1.5;
   margin: 0 0 28px;
-  color: #eee;
+  color: var(--text);
 }
 
 .standby-display {
-  background: rgba(0, 204, 255, 0.06);
+  background: color-mix(in srgb, var(--primary) 18%, transparent);
   width: 100%;
   padding: 18px;
-  border: 1px dashed rgba(0, 204, 255, 0.35);
+  border: 1px dashed color-mix(in srgb, var(--primary) 18%, transparent);
   box-sizing: border-box;
 }
 
@@ -1575,7 +1598,7 @@ function sendTeamChat() {
 
 .holding-body .blink {
   animation: blink 1s infinite;
-  color: #ff3333;
+  color: var(--c-rose);
 }
 
 @keyframes blink {
@@ -1595,7 +1618,7 @@ function sendTeamChat() {
 .holding-footer .scanner-line {
   width: 100%;
   height: 1px;
-  background: rgba(0, 204, 255, 0.18);
+  background: color-mix(in srgb, var(--primary) 18%, transparent);
   position: relative;
   overflow: hidden;
 }
@@ -1623,11 +1646,11 @@ function sendTeamChat() {
 }
 
 .mode-toggle-btn {
-  background: #222;
-  color: #888;
-  border: 1px solid #444;
+  background: var(--surface-3);
+  color: var(--text-2);
+  border: 1px solid var(--border);
   padding: 6px 12px;
-  font-family: 'JetBrains Mono', monospace;
+  font-family: var(--font-mono);
   font-size: 0.65rem;
   font-weight: bold;
   cursor: pointer;
@@ -1637,19 +1660,19 @@ function sendTeamChat() {
 
 .mode-toggle-btn:hover {
   border-color: #666;
-  color: #ccc;
+  color: var(--text-2);
 }
 
 .mode-toggle-btn.live-mode {
   background: #062c14;
-  color: #00ff00;
-  border-color: #00ff00;
-  box-shadow: 0 0 10px rgba(0, 255, 0, 0.2);
+  color: var(--text);
+  border-color: var(--primary);
+  box-shadow: 0 0 10px var(--border);
 }
 
 .live-pulse {
-  background: #00ff00 !important;
-  box-shadow: 0 0 10px #00ff00, 0 0 20px #00ff00;
+  background: var(--primary) !important;
+  box-shadow: 0 0 10px var(--primary), 0 0 20px var(--primary);
   animation: pulse 2s infinite;
 }
 
@@ -1657,5 +1680,203 @@ function sendTeamChat() {
   0% { transform: scale(1); opacity: 1; }
   50% { transform: scale(1.5); opacity: 0.7; }
   100% { transform: scale(1); opacity: 1; }
+}
+
+/* ===== Mission HUD =====================================================
+   Phones: a bottom sheet. Short-and-wide screens (phone landscape, tablet
+   on its side): a side rail, because a full-width sheet there covers the
+   map the crew is trying to read. Tablets in portrait get the sheet but
+   capped at --sheet-max and centred, so it doesn't smear edge to edge. */
+.mission-hud {
+  position: fixed;
+  left: 0; right: 0; bottom: 0;
+  z-index: 900;
+  width: 100%;
+  max-width: var(--sheet-max);
+  margin: 0 auto;
+  box-sizing: border-box;
+  padding: 10px 18px calc(16px + env(safe-area-inset-bottom));
+  background: color-mix(in srgb, var(--surface) 94%, transparent);
+  backdrop-filter: blur(16px);
+  border: 1px solid var(--border);
+  border-bottom: none;
+  border-radius: var(--r-xl) var(--r-xl) 0 0;
+  box-shadow: 0 -12px 34px rgba(0,0,0,0.3);
+  color: var(--text);
+}
+.hud-grab {
+  width: 36px; height: 4px;
+  border-radius: var(--r-pill);
+  background: var(--border);
+  margin: 0 auto 12px;
+}
+.hud-progress { display: flex; gap: 6px; margin-bottom: 12px; }
+.hud-dot {
+  flex: 1;
+  height: 5px;
+  border-radius: var(--r-pill);
+  background: var(--surface-3);
+}
+.hud-dot.done { background: var(--c-lime); }
+.hud-dot.now  { background: var(--primary); }
+
+.hud-main {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 14px;
+}
+.hud-target { min-width: 0; }
+.hud-eyebrow {
+  font-family: var(--font-mono);
+  font-size: 0.6rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-3);
+  margin-bottom: 5px;
+}
+.hud-mode { color: var(--c-lime); }
+.hud-name {
+  font-size: 1.15rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  line-height: 1.15;
+  overflow-wrap: anywhere;
+}
+.hud-sub {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 4px;
+  font-size: 0.7rem;
+  color: var(--text-3);
+}
+.hud-distance { text-align: right; flex: none; }
+.hud-distance b {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: 1.9rem;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--primary);
+  font-variant-numeric: tabular-nums;
+}
+.hud-distance span {
+  font-size: 0.6rem;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  color: var(--text-3);
+}
+
+.hud-crew { display: flex; gap: 7px; margin-top: 13px; }
+.crew-chip {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  background: var(--surface-2);
+  border-radius: var(--r-sm);
+  padding: 8px 10px;
+}
+.crew-chip.is-joker { background: color-mix(in srgb, var(--c-violet) 14%, transparent); }
+.crew-ico { font-size: 0.85rem; flex: none; }
+.crew-txt { min-width: 0; }
+.crew-txt b {
+  display: block;
+  font-size: 0.74rem;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.crew-txt > span {
+  font-size: 0.56rem;
+  color: var(--text-3);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-weight: 700;
+}
+
+.hud-alert {
+  margin-top: 12px;
+  text-align: center;
+  font-size: 0.75rem;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--c-lime);
+  background: color-mix(in srgb, var(--c-lime) 14%, transparent);
+  border-radius: var(--r-pill);
+  padding: 9px;
+}
+
+/* --- side rail: short + wide --- */
+@media (orientation: landscape) and (max-height: 560px) {
+  .mission-hud {
+    left: auto;
+    right: 0;
+    top: 0;
+    bottom: 0;
+    width: var(--rail-w);
+    max-width: 46vw;
+    margin: 0;
+    overflow-y: auto;
+    padding: calc(12px + env(safe-area-inset-top)) 16px 16px;
+    border-radius: var(--r-xl) 0 0 var(--r-xl);
+    border: 1px solid var(--border);
+    border-right: none;
+    box-shadow: -12px 0 34px rgba(0,0,0,0.3);
+  }
+  .hud-grab { display: none; }
+  .hud-main { flex-direction: column; align-items: flex-start; gap: 10px; }
+  .hud-distance { text-align: left; }
+  .hud-crew { flex-direction: column; }
+}
+
+/* --- tablets: roomier type, the sheet floats clear of the edges --- */
+@media (min-width: 700px) and (orientation: portrait) {
+  .mission-hud {
+    left: 12px;
+    right: 12px;
+    bottom: 12px;
+    width: auto;
+    border-radius: var(--r-xl);
+    border-bottom: 1px solid var(--border);
+    padding-bottom: calc(18px + env(safe-area-inset-bottom));
+  }
+  .hud-name { font-size: 1.35rem; }
+  .hud-distance b { font-size: 2.4rem; }
+  .hud-sub { font-size: 0.78rem; }
+  .crew-txt b { font-size: 0.82rem; }
+}
+
+.hud-boosts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 7px;
+  margin-top: 12px;
+}
+.boost-chip {
+  font-size: 0.66rem;
+  font-weight: 700;
+  padding: 6px 11px;
+  border-radius: var(--r-pill);
+  background: color-mix(in srgb, var(--c-violet) 16%, transparent);
+  color: var(--c-violet);
+}
+.boost-chip.is-shield {
+  background: color-mix(in srgb, var(--c-lime) 16%, transparent);
+  color: var(--c-lime);
+}
+.boost-timer {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
 }
 </style>

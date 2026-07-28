@@ -86,7 +86,7 @@ function secondsLeft(fx) {
   display: flex;
   align-items: center;
   justify-content: center;
-  font-family: 'JetBrains Mono', 'Courier New', monospace;
+  font-family: 'JetBrains Mono', var(--font-mono);
   color: #ff4df0;
   overflow: hidden;
 }
@@ -174,7 +174,7 @@ function secondsLeft(fx) {
   justify-content: center;
   padding: 20px;
   box-sizing: border-box;
-  font-family: 'JetBrains Mono', 'Courier New', monospace;
+  font-family: 'JetBrains Mono', var(--font-mono);
 }
 
 .sabfx-trans-frame {
@@ -183,7 +183,7 @@ function secondsLeft(fx) {
   background: #050a08;
   border: 1px solid rgba(0, 255, 136, 0.5);
   border-left: 4px solid #00ff88;
-  color: #00ff88;
+  color: var(--c-lime);
   padding: 26px 22px;
   box-shadow: 0 0 40px rgba(0, 255, 136, 0.25);
   animation: sabfx-flicker 3s linear infinite;
@@ -226,7 +226,7 @@ function secondsLeft(fx) {
   width: 100%;
   background: transparent;
   border: 1px solid #00ff88;
-  color: #00ff88;
+  color: var(--c-lime);
   font-family: inherit;
   font-size: 0.78rem;
   font-weight: 800;
@@ -273,7 +273,7 @@ function secondsLeft(fx) {
   background: rgba(40, 4, 34, 0.94);
   border: 1px solid #ff4df0;
   color: #ffb8f5;
-  font-family: 'JetBrains Mono', monospace;
+  font-family: var(--font-mono);
   font-size: 0.7rem;
   font-weight: 700;
   letter-spacing: 0.08em;

@@ -1,10 +1,6 @@
 <template>
   <div class="welcome-overlay">
     <div class="welcome-frame">
-      <div class="corner top-left"></div>
-      <div class="corner top-right"></div>
-      <div class="corner bottom-left"></div>
-      <div class="corner bottom-right"></div>
 
       <div class="signal-status">
         <span class="signal-dot"></span>
@@ -28,7 +24,7 @@
       <div v-else class="briefing">
         <p class="briefing-intro">Klassificerad uppdragsbriefing. Läs noggrant.</p>
         <ul>
-          <li>Ert lag rör sig mot strategiska mål i sektor Öland.</li>
+          <li>Ert lag rör sig mot strategiska mål i operationsområdet.</li>
           <li>Kompassen pekar mot nästa mål. Karta visar inte er position.</li>
           <li>Halvvägs sker en återsamling. Inga ledtrådar därutöver.</li>
           <li>Slutför alla uppdrag och nå målet.</li>
@@ -84,13 +80,13 @@ const stamp = computed(() => {
 .welcome-overlay {
   position: fixed;
   inset: 0;
-  background: #0a0a0a;
+  background: var(--bg);
   display: flex;
   align-items: center;
   justify-content: safe center;
   z-index: 2100;
-  font-family: 'JetBrains Mono', 'Courier New', monospace;
-  color: #00ccff;
+  font-family: 'JetBrains Mono', var(--font-mono);
+  color: var(--primary);
   padding: 20px;
   overflow: auto;
 }
@@ -101,8 +97,8 @@ const stamp = computed(() => {
   inset: 0;
   background: repeating-linear-gradient(
     0deg,
-    rgba(0, 204, 255, 0.025) 0px,
-    rgba(0, 204, 255, 0.025) 1px,
+    color-mix(in srgb, var(--primary) 18%, transparent) 0px,
+    color-mix(in srgb, var(--primary) 18%, transparent) 1px,
     transparent 1px,
     transparent 3px
   );
@@ -112,24 +108,16 @@ const stamp = computed(() => {
 .welcome-frame {
   position: relative;
   width: 100%;
-  max-width: 480px;
+  max-width: var(--panel-max);
   padding: 36px 28px;
-  background: rgba(0, 0, 0, 0.88);
-  border: 1px solid rgba(0, 204, 255, 0.3);
-  box-shadow: 0 0 60px rgba(0, 204, 255, 0.18), inset 0 0 30px rgba(0, 204, 255, 0.04);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-lg);
+  border-radius: var(--r-xl);
 }
 
-.corner {
-  position: absolute;
-  width: 16px;
-  height: 16px;
-  border: 2px solid #00ccff;
-  opacity: 0.8;
-}
-.top-left     { top: 6px;    left: 6px;    border-right: none;  border-bottom: none; }
-.top-right    { top: 6px;    right: 6px;   border-left: none;   border-bottom: none; }
-.bottom-left  { bottom: 6px; left: 6px;    border-right: none;  border-top: none; }
-.bottom-right { bottom: 6px; right: 6px;   border-left: none;   border-top: none; }
+.corner { display: none; }
+
 
 .signal-status {
   font-size: 0.7rem;
@@ -173,14 +161,14 @@ const stamp = computed(() => {
   font-size: clamp(2rem, 8vw, 2.6rem);
   font-weight: 900;
   letter-spacing: 0.1em;
-  text-shadow: 0 0 14px rgba(0, 204, 255, 0.45);
+  text-shadow: 0 0 14px color-mix(in srgb, var(--primary) 18%, transparent);
 }
 
 .typewriter {
   display: inline-block;
   overflow: hidden;
   white-space: nowrap;
-  border-right: 2px solid #00ccff;
+  border-right: 2px solid var(--primary);
   animation: typing 1.4s steps(9, end) 0.2s both, caret 0.8s step-end infinite;
 }
 
@@ -203,7 +191,7 @@ const stamp = computed(() => {
 .briefing-intro {
   margin: 0 0 12px;
   letter-spacing: 0.04em;
-  color: #00ccff;
+  color: var(--primary);
   opacity: 0.85;
 }
 
@@ -216,24 +204,24 @@ const stamp = computed(() => {
 .briefing li {
   padding: 7px 0 7px 22px;
   position: relative;
-  border-top: 1px dashed rgba(0, 204, 255, 0.15);
+  border-top: 1px dashed color-mix(in srgb, var(--primary) 18%, transparent);
 }
 
 .briefing li:first-child {
-  border-top: 1px solid rgba(0, 204, 255, 0.22);
+  border-top: 1px solid color-mix(in srgb, var(--primary) 18%, transparent);
 }
 
 .briefing li::before {
   content: '›';
   position: absolute;
   left: 4px;
-  color: #00ccff;
+  color: var(--primary);
   font-weight: 700;
 }
 
 .scanner-line {
   height: 1px;
-  background: rgba(0, 204, 255, 0.18);
+  background: color-mix(in srgb, var(--primary) 18%, transparent);
   position: relative;
   overflow: hidden;
   margin-bottom: 14px;
@@ -246,8 +234,8 @@ const stamp = computed(() => {
   left: 0;
   width: 50px;
   height: 100%;
-  background: #00ccff;
-  box-shadow: 0 0 8px #00ccff;
+  background: var(--primary);
+  box-shadow: 0 0 8px var(--primary);
   animation: scan 2.6s linear infinite;
 }
 
@@ -261,7 +249,7 @@ const stamp = computed(() => {
   justify-content: space-between;
   font-size: 0.65rem;
   letter-spacing: 0.12em;
-  color: #555;
+  color: var(--text-3);
   margin-bottom: 22px;
   font-variant-numeric: tabular-nums;
 }
@@ -269,8 +257,8 @@ const stamp = computed(() => {
 .accept-btn {
   width: 100%;
   background: transparent;
-  border: 1px solid #00ccff;
-  color: #00ccff;
+  border: 1px solid var(--primary);
+  color: var(--primary);
   padding: 16px;
   font-family: inherit;
   font-weight: 700;
@@ -289,15 +277,15 @@ const stamp = computed(() => {
   left: -100%;
   width: 100%;
   height: 100%;
-  background: linear-gradient(90deg, transparent, rgba(0, 204, 255, 0.25), transparent);
+  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--primary) 18%, transparent), transparent);
   transition: left 0.4s;
 }
 
 .accept-btn:hover::after { left: 100%; }
 
 .accept-btn:hover {
-  background: #00ccff;
+  background: var(--primary);
   color: #000;
-  box-shadow: 0 0 24px rgba(0, 204, 255, 0.65);
+  box-shadow: 0 0 24px color-mix(in srgb, var(--primary) 18%, transparent);
 }
 </style>

@@ -10,13 +10,11 @@
 <script setup>
 import { onMounted, onBeforeUnmount, ref, nextTick, watch, computed } from 'vue'
 import L from 'leaflet'
-import { useSimulationStore, WALKING_RADIUS_M } from '../store/simulationStore'
-
-const { walkingMode } = useSimulationStore()
-
 const props = defineProps({
-  center: { type: Array, required: false, default: () => [56.8, 16.6] },
-  zoom: { type: Number, default: 12 },
+  // Neutral world view. The parent always passes a real center once the route
+  // or a GPS fix is known — this default must not plant the map on Öland.
+  center: { type: Array, required: false, default: () => [20, 0] },
+  zoom: { type: Number, default: 3 },
   idealRoute: { type: Array, default: () => [] },
   checkpoints: { type: Array, default: () => [] },
   activeIndex: { type: Number, default: 0 },
@@ -26,6 +24,9 @@ const props = defineProps({
   // Explore mode: show the team's own live GPS position on the map. In game
   // mode this stays null — navigating blind is part of the game.
   ownPosition: { type: Object, default: null }, // { lat, lng }
+  // SPANING (joker support): rival teams' last known positions, shown only
+  // while the effect is running. [{ team, lat, lng, color, name }]
+  rivalPositions: { type: Array, default: () => [] },
   // The parent keeps this component mounted and only hides it (v-show) while a
   // checkpoint overlay is up, so the player's pan/zoom/chosen tile layer
   // survive across checkpoints. Leaflet can't lay out tiles while display:none,
@@ -49,6 +50,8 @@ let routeLayer = null
 let checkpointLayer = null
 let pinLayer = null
 let ownPosLayer = null
+let rivalLayer = null
+let sizeTimer = null
 
 // Manual pins ("nålar"): the navigator taps the map to drop one and
 // long-presses (contextmenu on touch, right-click on desktop) a pin to remove
@@ -156,7 +159,7 @@ function drawTacticalData() {
     // Real-world geofence "zone": a circle measured in metres (so it scales
     // with zoom) using the same radius the arrival check uses, so what the
     // navigator sees matches when they'll actually trigger the checkpoint.
-    const geofenceRadius = walkingMode.value ? WALKING_RADIUS_M : (cp.radius || 500)
+    const geofenceRadius = cp.radius || 500
     L.circle([cp.lat, cp.lng], {
       radius: geofenceRadius,
       color: props.teamColor,
@@ -206,11 +209,40 @@ function drawOwnPosition() {
   }).addTo(ownPosLayer)
 }
 
+// SPANING: rival teams, drawn in their own colours and clearly labelled so
+// nobody mistakes one for their own position or their target.
+function drawRivalPositions() {
+  if (!map || !rivalLayer) return
+  rivalLayer.clearLayers()
+  for (const r of props.rivalPositions) {
+    if (!r || !Number.isFinite(r.lat) || !Number.isFinite(r.lng)) continue
+    L.marker([r.lat, r.lng], {
+      icon: L.divIcon({
+        className: 'rival-pos-icon',
+        html: `<div class="rival-pos-marker" style="--rival-color:${r.color || '#888'}">
+                 <span class="rival-pos-dot"></span>
+               </div>`,
+        iconSize: [22, 22],
+        iconAnchor: [11, 11],
+      }),
+      interactive: false,
+      zIndexOffset: 1100,
+    })
+      .bindTooltip(r.name || r.team, { permanent: true, direction: 'top', offset: [0, -10], className: 'rival-tooltip' })
+      .addTo(rivalLayer)
+  }
+}
+
 watch(() => props.ownPosition, () => {
   drawOwnPosition()
+  drawRivalPositions()
 }, { deep: true })
 
-watch(() => [props.idealRoute, props.checkpoints, props.activeIndex, walkingMode.value], () => {
+watch(() => props.rivalPositions, () => {
+  drawRivalPositions()
+}, { deep: true })
+
+watch(() => [props.idealRoute, props.checkpoints, props.activeIndex], () => {
   drawTacticalData()
 }, { deep: true })
 
@@ -241,6 +273,7 @@ onMounted(async () => {
   checkpointLayer = L.layerGroup().addTo(map)
   pinLayer = L.layerGroup().addTo(map)
   ownPosLayer = L.layerGroup().addTo(map)
+  rivalLayer = L.layerGroup().addTo(map)
 
   map.on('click', (e) => {
     cancelPendingPin()
@@ -256,7 +289,13 @@ onMounted(async () => {
   loadPins()
   drawPins()
   drawOwnPosition()
-  setTimeout(() => { map.invalidateSize() }, 200)
+  drawRivalPositions()
+  // Same guard as AdminMap: unmounting inside this window (checkpoint overlay,
+  // navigator handover) nulls `map` and this would throw.
+  sizeTimer = setTimeout(() => {
+    sizeTimer = null
+    if (map) map.invalidateSize()
+  }, 200)
 })
 
 // Map only mounts once a team is picked, but a navigator handover swaps the
@@ -268,6 +307,7 @@ watch(() => props.team, () => {
 
 onBeforeUnmount(()=>{
   cancelPendingPin()
+  if (sizeTimer) { clearTimeout(sizeTimer); sizeTimer = null }
   if (map) { map.remove(); map = null }
 })
 </script>
@@ -284,9 +324,9 @@ onBeforeUnmount(()=>{
   left: 12px;
   z-index: 900;
   background: rgba(0, 0, 0, 0.75);
-  border: 1px solid rgba(0, 255, 0, 0.45);
-  color: #00ff00;
-  font-family: 'JetBrains Mono', monospace;
+  border: 1px solid var(--border);
+  color: var(--text);
+  font-family: var(--font-mono);
   font-size: 0.7rem;
   font-weight: 700;
   letter-spacing: 0.1em;

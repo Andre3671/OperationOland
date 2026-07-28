@@ -53,7 +53,7 @@ const formattedCumulative = computed(() => {
   border: 2px solid #ff0000;
   box-shadow: 0 0 30px rgba(255, 0, 0, 0.4);
   text-align: center;
-  font-family: 'JetBrains Mono', monospace;
+  font-family: var(--font-mono);
   max-width: 500px;
   width: 90%;
 }
@@ -89,7 +89,7 @@ const formattedCumulative = computed(() => {
 .timer {
   font-size: 3.5rem;
   font-weight: 900;
-  color: #fff;
+  color: var(--text);
   text-shadow: 0 0 10px #ff0000;
 }
 
@@ -105,19 +105,19 @@ const formattedCumulative = computed(() => {
 
 .stat-label {
   font-size: 0.55rem;
-  color: #888;
+  color: var(--text-2);
   margin-bottom: 5px;
 }
 
 .stat-value {
   font-size: 1.2rem;
   font-weight: bold;
-  color: #ffcc00;
+  color: var(--c-amber);
 }
 
 .warning-footer {
   font-size: 0.65rem;
-  color: #666;
+  color: var(--text-3);
   font-style: italic;
 }
 </style>

@@ -15,15 +15,42 @@ const ADMIN_TOKEN_KEY = 'operation_oland_admin_token'
 const JOIN_CODE_KEY = 'oo-join-code'
 const JOIN_NAME_KEY = 'oo-join-op-name'
 
+// localStorage throws — not just returns null — when storage is blocked:
+// Safari private browsing, "block all cookies", some managed devices. These
+// helpers sit on the critical path (the join code is the very first thing a
+// player needs), so an uncaught throw here would leave the app dead at the
+// join gate rather than merely forgetful. Every access is wrapped; the app
+// degrades to "you re-enter the code each time" instead of breaking.
+function lsGet(key) {
+  try {
+    if (typeof localStorage === 'undefined') return ''
+    return localStorage.getItem(key) || ''
+  } catch (_) {
+    return ''
+  }
+}
+
+function lsSet(key, value) {
+  try {
+    if (typeof localStorage === 'undefined') return
+    localStorage.setItem(key, value)
+  } catch (_) { /* storage blocked or full — session-only is fine */ }
+}
+
+function lsRemove(key) {
+  try {
+    if (typeof localStorage === 'undefined') return
+    localStorage.removeItem(key)
+  } catch (_) { /* nothing to do */ }
+}
+
 export function getAdminToken() {
-  if (typeof localStorage === 'undefined') return ''
-  return localStorage.getItem(ADMIN_TOKEN_KEY) || ''
+  return lsGet(ADMIN_TOKEN_KEY)
 }
 
 export function setAdminToken(token) {
-  if (typeof localStorage === 'undefined') return
-  if (token) localStorage.setItem(ADMIN_TOKEN_KEY, token)
-  else localStorage.removeItem(ADMIN_TOKEN_KEY)
+  if (token) lsSet(ADMIN_TOKEN_KEY, token)
+  else lsRemove(ADMIN_TOKEN_KEY)
 }
 
 // Capture token from ?token= once and stash. Called early on /admin route.
@@ -47,28 +74,24 @@ function normalizeJoinCode(code) {
 }
 
 export function getJoinCode() {
-  if (typeof localStorage === 'undefined') return ''
-  return localStorage.getItem(JOIN_CODE_KEY) || ''
+  return lsGet(JOIN_CODE_KEY)
 }
 
 export function getJoinOperationName() {
-  if (typeof localStorage === 'undefined') return ''
-  return localStorage.getItem(JOIN_NAME_KEY) || ''
+  return lsGet(JOIN_NAME_KEY)
 }
 
 export function setJoinCode(code, opName = '') {
-  if (typeof localStorage === 'undefined') return
   const normalized = normalizeJoinCode(code)
   if (normalized) {
-    localStorage.setItem(JOIN_CODE_KEY, normalized)
-    if (opName) localStorage.setItem(JOIN_NAME_KEY, opName)
+    lsSet(JOIN_CODE_KEY, normalized)
+    if (opName) lsSet(JOIN_NAME_KEY, opName)
   }
 }
 
 export function clearJoinCode() {
-  if (typeof localStorage === 'undefined') return
-  localStorage.removeItem(JOIN_CODE_KEY)
-  localStorage.removeItem(JOIN_NAME_KEY)
+  lsRemove(JOIN_CODE_KEY)
+  lsRemove(JOIN_NAME_KEY)
 }
 
 // Capture ?code=XYZ once and stash (admin can hand players a link). The

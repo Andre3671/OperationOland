@@ -58,7 +58,6 @@ const arrivalLog = ref(Array.isArray(cached.arrivalLog) ? cached.arrivalLog : []
 const chatMessages = ref(Array.isArray(cached.chatMessages) ? cached.chatMessages : [])
 const isSimulationMode = ref(cached.isSimulationMode ?? false)
 const isOperationActive = ref(cached.isOperationActive ?? false)
-const walkingMode = ref(cached.walkingMode ?? false)
 const operationStartTime = ref(cached.operationStartTime ?? null)
 const meetingPointTime = ref(cached.meetingPointTime ?? null)
 const teamStartTimes = ref(cached.teamStartTimes || makeEmptyMap(null))
@@ -78,7 +77,6 @@ const sabotageLog = ref(Array.isArray(cached.sabotageLog) ? cached.sabotageLog :
 const operationsList = ref([])
 const activeOperationId = ref(null)
 
-export const WALKING_RADIUS_M = 50
 const connectionStatus = ref('connecting')
 
 // True while we're applying a snapshot from the server. Suppresses the watch
@@ -101,7 +99,6 @@ function applyState(serverState) {
     chatMessages.value = Array.isArray(serverState.chatMessages) ? serverState.chatMessages : []
     isSimulationMode.value = !!serverState.isSimulationMode
     isOperationActive.value = !!serverState.isOperationActive
-    walkingMode.value = !!serverState.walkingMode
     operationStartTime.value = serverState.operationStartTime ?? null
     meetingPointTime.value = serverState.meetingPointTime ?? null
     teamStartTimes.value = serverState.teamStartTimes || makeEmptyMap(null)
@@ -241,7 +238,6 @@ makeAdminPatcher('globalFinish', globalFinish)
 makeAdminPatcher('idealRoadPaths', idealRoadPaths)
 makeAdminPatcher('isSimulationMode', isSimulationMode, { debounce: 50 })
 makeAdminPatcher('isOperationActive', isOperationActive, { debounce: 50 })
-makeAdminPatcher('walkingMode', walkingMode, { debounce: 50 })
 makeAdminPatcher('operationStartTime', operationStartTime, { debounce: 300 })
 makeAdminPatcher('meetingPointTime', meetingPointTime, { debounce: 300 })
 makeAdminPatcher('teamRosters', teamRosters)
@@ -450,8 +446,9 @@ export function useSimulationStore() {
   function resetAll() {
     api.adminReset().catch((e) => {
       console.warn('[sync] adminReset failed:', e)
-      // Fall back to a hard reload if the server is unreachable.
-      localStorage.removeItem(STORAGE_KEY)
+      // Fall back to a hard reload if the server is unreachable. The reload
+      // must happen even if storage is blocked, so it sits outside the try.
+      try { localStorage.removeItem(STORAGE_KEY) } catch (_) { /* blocked */ }
       window.location.reload()
     })
   }
@@ -470,7 +467,6 @@ export function useSimulationStore() {
     chatMessages,
     isSimulationMode,
     isOperationActive,
-    walkingMode,
     operationStartTime,
     meetingPointTime,
     teamStartTimes,

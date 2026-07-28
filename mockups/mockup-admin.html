@@ -1,0 +1,529 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Admin — Operation Roadtrip (mockup)</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --r-sm:10px; --r-md:14px; --r-lg:20px; --r-pill:999px;
+  --c-cyan:#38bdf8; --c-violet:#a78bfa; --c-lime:#4ade80;
+  --c-amber:#fbbf24; --c-rose:#fb7185; --c-teal:#2dd4bf;
+  --font:'Inter',system-ui,sans-serif;
+  --mono:'JetBrains Mono',ui-monospace,monospace;
+  --shadow-sm:0 2px 8px rgba(8,15,35,.06);
+  --shadow-md:0 8px 28px rgba(8,15,35,.10);
+  --shadow-lg:0 18px 46px rgba(8,15,35,.16);
+}
+body[data-theme="light"]{
+  --bg:#eef2fb; --surface:#fff; --surface-2:#f6f8fd; --surface-3:#eef2fa;
+  --border:#e4e9f4; --text:#16203a; --text-2:#5a6785; --text-3:#93a0bb;
+  --primary:#4f7cff; --primary-soft:#e9efff; --on-primary:#fff;
+  --map-a:#dfe7f5; --map-b:#cfdcee; --map-line:#c3d0e6;
+}
+body[data-theme="dark"]{
+  --bg:#0d1220; --surface:#161d33; --surface-2:#111829; --surface-3:#1c2440;
+  --border:#26304d; --text:#eef2ff; --text-2:#a3aecb; --text-3:#6b779a;
+  --primary:#6d94ff; --primary-soft:#22305a; --on-primary:#0b1020;
+  --map-a:#131b30; --map-b:#0e1526; --map-line:#1e2842;
+  --shadow-md:0 8px 28px rgba(0,0,0,.5); --shadow-lg:0 18px 46px rgba(0,0,0,.6);
+}
+*{box-sizing:border-box}
+body{margin:0;height:100vh;overflow:hidden;font-family:var(--font);background:var(--bg);color:var(--text);-webkit-font-smoothing:antialiased}
+
+/* ---------------- MAP BACKGROUND ---------------- */
+.map{position:fixed;inset:0;background:
+  radial-gradient(1000px 700px at 30% 40%, var(--map-a) 0%, var(--map-b) 100%);}
+.map svg{position:absolute;inset:0;width:100%;height:100%}
+
+/* ---------------- TOP BAR ---------------- */
+.topbar{
+  position:fixed;top:14px;left:14px;right:14px;z-index:20;
+  display:flex;align-items:center;gap:12px;
+  padding:10px 12px;border-radius:var(--r-lg);
+  background:color-mix(in srgb,var(--surface) 86%,transparent);
+  backdrop-filter:blur(14px);
+  border:1px solid var(--border);box-shadow:var(--shadow-md);
+}
+.brand{display:flex;align-items:center;gap:10px;padding-right:6px}
+.logo{width:34px;height:34px;border-radius:11px;display:grid;place-items:center;font-size:17px;
+  background:linear-gradient(135deg,var(--primary),var(--c-violet));color:#fff;flex:none}
+.brand b{font-size:14px;font-weight:800;letter-spacing:-.01em;display:block;line-height:1.2}
+.brand span{font-size:11px;color:var(--text-3);font-weight:500}
+
+.op-select{
+  font-family:var(--font);font-size:13px;font-weight:600;color:var(--text);
+  background:var(--surface-2);border:1px solid var(--border);
+  padding:9px 14px;border-radius:var(--r-pill);cursor:pointer;outline:none;
+}
+.live-pill{
+  display:flex;align-items:center;gap:8px;font-size:12px;font-weight:700;
+  padding:8px 15px;border-radius:var(--r-pill);cursor:pointer;border:1px solid transparent;
+  background:color-mix(in srgb,var(--c-lime) 16%,transparent);color:#15803d;
+}
+body[data-theme="dark"] .live-pill{color:var(--c-lime)}
+.live-pill .d{width:7px;height:7px;border-radius:50%;background:currentColor;
+  box-shadow:0 0 0 4px color-mix(in srgb,var(--c-lime) 22%,transparent);animation:blip 1.8s infinite}
+@keyframes blip{0%,100%{opacity:.5;transform:scale(.9)}50%{opacity:1;transform:scale(1.2)}}
+
+.spacer{flex:1}
+.tb-btn{
+  display:inline-flex;align-items:center;gap:7px;
+  font-family:var(--font);font-size:12.5px;font-weight:600;color:var(--text-2);
+  background:var(--surface-2);border:1px solid var(--border);
+  padding:9px 14px;border-radius:var(--r-pill);cursor:pointer;transition:.16s;
+}
+.tb-btn:hover{background:var(--surface-3);color:var(--text);transform:translateY(-1px)}
+.tb-btn.on{background:var(--primary);border-color:var(--primary);color:var(--on-primary)}
+.tb-btn.danger:hover{background:color-mix(in srgb,var(--c-rose) 15%,transparent);color:var(--c-rose);border-color:transparent}
+.avatar{width:34px;height:34px;border-radius:50%;background:var(--primary-soft);color:var(--primary);
+  display:grid;place-items:center;font-size:13px;font-weight:800;cursor:pointer;flex:none}
+
+/* ---------------- JOIN CODE CARD ---------------- */
+.joincard{
+  position:fixed;top:84px;left:14px;z-index:15;
+  background:color-mix(in srgb,var(--surface) 90%,transparent);backdrop-filter:blur(14px);
+  border:1px solid var(--border);border-radius:var(--r-lg);
+  padding:16px 20px;box-shadow:var(--shadow-md);
+}
+.joincard .lbl{font-size:10.5px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--text-3);margin-bottom:8px}
+.joincard .row{display:flex;align-items:center;gap:10px}
+.code{
+  font-family:var(--mono);font-size:26px;font-weight:700;letter-spacing:.14em;
+  color:var(--primary);cursor:pointer;padding:4px 10px;border-radius:var(--r-sm);
+  background:var(--primary-soft);
+}
+.mini{width:32px;height:32px;border-radius:10px;border:1px solid var(--border);background:var(--surface-2);
+  color:var(--text-2);cursor:pointer;font-size:13px;display:grid;place-items:center}
+.mini:hover{background:var(--surface-3);color:var(--text)}
+
+/* ---------------- SIDEBAR ---------------- */
+.sidebar{
+  position:fixed;top:14px;right:14px;bottom:14px;width:400px;z-index:18;
+  display:flex;flex-direction:column;
+  background:color-mix(in srgb,var(--surface) 92%,transparent);backdrop-filter:blur(16px);
+  border:1px solid var(--border);border-radius:var(--r-lg);
+  box-shadow:var(--shadow-lg);overflow:hidden;
+  padding-top:62px; /* clears topbar */
+}
+.tabs{display:flex;gap:4px;padding:12px 12px 10px;border-bottom:1px solid var(--border);overflow-x:auto;scrollbar-width:none}
+.tabs::-webkit-scrollbar{display:none}
+.tab{
+  flex:none;font-family:var(--font);font-size:12px;font-weight:700;
+  color:var(--text-3);background:transparent;border:0;cursor:pointer;
+  padding:9px 14px;border-radius:var(--r-pill);transition:.16s;white-space:nowrap;
+  display:flex;align-items:center;gap:6px;
+}
+.tab:hover{background:var(--surface-2);color:var(--text-2)}
+.tab.on{background:var(--primary);color:var(--on-primary)}
+.tab .cnt{font-size:10px;background:color-mix(in srgb,currentColor 18%,transparent);padding:1px 6px;border-radius:var(--r-pill)}
+
+.panel{flex:1;overflow-y:auto;padding:16px}
+.panel::-webkit-scrollbar{width:8px}
+.panel::-webkit-scrollbar-thumb{background:var(--border);border-radius:4px}
+.pane{display:none}
+.pane.on{display:block;animation:fade .22s ease}
+@keyframes fade{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+
+.grp{font-size:10.5px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;
+  color:var(--text-3);margin:4px 0 12px;display:flex;align-items:center;justify-content:space-between}
+.grp + .grp{margin-top:26px}
+
+/* ---- cards ---- */
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-md);
+  padding:15px;margin-bottom:11px;box-shadow:var(--shadow-sm);transition:.18s}
+.card:hover{box-shadow:var(--shadow-md)}
+
+.tc-head{display:flex;align-items:center;gap:10px;margin-bottom:13px}
+.tc-avatar{width:34px;height:34px;border-radius:11px;display:grid;place-items:center;
+  font-size:13px;font-weight:800;color:#fff;flex:none}
+.tc-name{font-size:14px;font-weight:700;flex:1;letter-spacing:-.01em}
+.chip{font-size:10.5px;font-weight:700;padding:4px 10px;border-radius:var(--r-pill)}
+.chip.ok  {background:color-mix(in srgb,var(--c-lime) 16%,transparent);color:#15803d}
+.chip.warn{background:color-mix(in srgb,var(--c-amber) 20%,transparent);color:#b45309}
+.chip.bad {background:color-mix(in srgb,var(--c-rose) 15%,transparent);color:#be123c}
+body[data-theme="dark"] .chip.ok{color:var(--c-lime)}
+body[data-theme="dark"] .chip.warn{color:var(--c-amber)}
+body[data-theme="dark"] .chip.bad{color:var(--c-rose)}
+
+.prog-lbl{display:flex;justify-content:space-between;font-size:11.5px;color:var(--text-2);margin-bottom:6px;font-weight:500}
+.prog-lbl b{color:var(--text);font-weight:700}
+.bar{height:8px;border-radius:var(--r-pill);background:var(--surface-3);overflow:hidden;margin-bottom:13px}
+.bar i{display:block;height:100%;border-radius:var(--r-pill);transition:width .5s}
+
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:12px}
+.stat{background:var(--surface-2);border-radius:var(--r-sm);padding:9px 10px;text-align:center}
+.stat b{display:block;font-family:var(--mono);font-size:14px;font-weight:700}
+.stat span{font-size:9.5px;color:var(--text-3);text-transform:uppercase;letter-spacing:.06em;font-weight:600}
+
+.acts{display:flex;gap:6px}
+.act{flex:1;font-family:var(--font);font-size:11.5px;font-weight:600;color:var(--text-2);
+  background:var(--surface-2);border:1px solid var(--border);padding:8px;border-radius:var(--r-sm);cursor:pointer;transition:.15s}
+.act:hover{background:var(--surface-3);color:var(--text)}
+.act.danger:hover{background:color-mix(in srgb,var(--c-rose) 14%,transparent);color:var(--c-rose);border-color:transparent}
+
+/* ---- leaderboard ---- */
+.lb-row{display:flex;align-items:center;gap:11px;padding:11px 13px;border-radius:var(--r-md);
+  background:var(--surface);border:1px solid var(--border);margin-bottom:8px}
+.lb-row.top{background:linear-gradient(100deg,color-mix(in srgb,var(--c-amber) 13%,var(--surface)),var(--surface));
+  border-color:color-mix(in srgb,var(--c-amber) 35%,transparent)}
+.rank{width:24px;font-family:var(--mono);font-size:13px;font-weight:700;color:var(--text-3);text-align:center;flex:none}
+.lb-row.top .rank{font-size:16px}
+.lb-name{flex:1;font-size:13px;font-weight:600}
+.lb-sub{font-size:10.5px;color:var(--text-3);font-weight:500}
+.pts{font-family:var(--mono);font-size:15px;font-weight:700}
+
+/* ---- log / chat ---- */
+.log{display:flex;gap:10px;padding:10px 0;border-bottom:1px solid var(--border);font-size:12.5px}
+.log:last-child{border:0}
+.log-t{font-family:var(--mono);font-size:11px;color:var(--text-3);flex:none;padding-top:1px}
+.log b{font-weight:700}
+.log p{margin:2px 0 0;color:var(--text-2);font-size:11.5px;line-height:1.45}
+
+/* ---- mode toggle ---- */
+.seg{display:flex;gap:6px;padding:5px;background:var(--surface-2);border-radius:var(--r-pill);margin-bottom:12px}
+.seg button{flex:1;font-family:var(--font);font-size:12.5px;font-weight:700;color:var(--text-2);
+  background:transparent;border:0;padding:11px;border-radius:var(--r-pill);cursor:pointer;transition:.18s}
+.seg button.on{background:var(--surface);color:var(--text);box-shadow:var(--shadow-sm)}
+.hint{font-size:11.5px;line-height:1.55;color:var(--text-3);margin:0 0 6px}
+
+/* ---- form bits ---- */
+.field{margin-bottom:12px}
+.field label{display:block;font-size:11px;font-weight:700;color:var(--text-2);margin-bottom:6px;letter-spacing:.03em}
+.field input,.field select,.field textarea{
+  width:100%;font-family:var(--font);font-size:13px;color:var(--text);
+  background:var(--surface-2);border:1px solid var(--border);
+  padding:11px 13px;border-radius:var(--r-sm);outline:none;transition:.15s}
+.field input:focus,.field select:focus,.field textarea:focus{border-color:var(--primary);background:var(--surface)}
+.btn-full{width:100%;font-family:var(--font);font-size:13px;font-weight:700;
+  background:linear-gradient(135deg,var(--primary),var(--c-violet));color:#fff;border:0;
+  padding:13px;border-radius:var(--r-pill);cursor:pointer;transition:.18s;
+  box-shadow:0 6px 16px color-mix(in srgb,var(--primary) 32%,transparent)}
+.btn-full:hover{transform:translateY(-2px);box-shadow:0 10px 22px color-mix(in srgb,var(--primary) 42%,transparent)}
+.btn-soft{width:100%;font-family:var(--font);font-size:12.5px;font-weight:600;color:var(--text-2);
+  background:var(--surface-2);border:1px solid var(--border);padding:11px;border-radius:var(--r-pill);cursor:pointer;margin-top:8px}
+.btn-soft:hover{background:var(--surface-3);color:var(--text)}
+
+/* ---- checkpoint list ---- */
+.cp{display:flex;align-items:center;gap:11px;padding:11px 13px;background:var(--surface);
+  border:1px solid var(--border);border-radius:var(--r-md);margin-bottom:7px;cursor:grab}
+.cp:hover{border-color:var(--primary)}
+.cp-n{width:26px;height:26px;border-radius:9px;display:grid;place-items:center;flex:none;
+  font-family:var(--mono);font-size:11px;font-weight:700;color:#fff}
+.cp-b{flex:1}
+.cp-b b{display:block;font-size:12.5px;font-weight:600}
+.cp-b span{font-size:10.5px;color:var(--text-3);font-family:var(--mono)}
+.drag{color:var(--text-3);font-size:14px;cursor:grab}
+
+/* ---- sabotage ---- */
+.sab{display:flex;align-items:center;gap:11px;padding:12px 13px;border-radius:var(--r-md);
+  background:color-mix(in srgb,var(--c-rose) 7%,var(--surface));
+  border:1px solid color-mix(in srgb,var(--c-rose) 22%,transparent);margin-bottom:8px}
+.sab-ico{width:32px;height:32px;border-radius:10px;display:grid;place-items:center;font-size:15px;flex:none;
+  background:color-mix(in srgb,var(--c-rose) 16%,transparent)}
+.sab b{display:block;font-size:12.5px;font-weight:700}
+.sab span{font-size:10.5px;color:var(--text-3)}
+.cost{font-family:var(--mono);font-size:12.5px;font-weight:700;color:var(--c-rose)}
+.sab.help{background:color-mix(in srgb,var(--c-lime) 8%,var(--surface));
+  border-color:color-mix(in srgb,var(--c-lime) 26%,transparent)}
+.sab.help .sab-ico{background:color-mix(in srgb,var(--c-lime) 17%,transparent)}
+.sab.help .cost{color:#16a34a}
+body[data-theme="dark"] .sab.help .cost{color:var(--c-lime)}
+.tag-joker{font-size:10px;font-weight:700;padding:3px 8px;border-radius:var(--r-pill);
+  background:color-mix(in srgb,var(--c-violet) 16%,transparent);color:var(--c-violet)}
+.legend{display:flex;gap:14px;font-size:10.5px;color:var(--text-3);font-weight:600;margin-bottom:12px}
+.legend i{font-style:normal;display:inline-flex;align-items:center;gap:5px}
+.legend b{width:8px;height:8px;border-radius:50%;display:inline-block}
+.roster{display:flex;align-items:center;gap:9px;padding:9px 0;border-bottom:1px solid var(--border)}
+.roster:last-child{border:0}
+.roster .nm{flex:1;font-size:12.5px;font-weight:500}
+.roster select{font-family:var(--font);font-size:11.5px;background:var(--surface-2);border:1px solid var(--border);
+  padding:7px 10px;border-radius:var(--r-sm);color:var(--text);outline:none}
+.tag-sab{font-size:10px;font-weight:700;padding:3px 8px;border-radius:var(--r-pill);
+  background:color-mix(in srgb,var(--c-rose) 15%,transparent);color:var(--c-rose)}
+
+/* theme switch */
+.theme-switch{position:fixed;bottom:16px;left:16px;z-index:40;display:flex;gap:4px;padding:4px;
+  background:var(--surface);border:1px solid var(--border);border-radius:var(--r-pill);box-shadow:var(--shadow-md)}
+.theme-switch button{border:0;background:transparent;color:var(--text-2);font-family:var(--font);
+  font-size:11.5px;font-weight:600;padding:7px 13px;border-radius:var(--r-pill);cursor:pointer}
+.theme-switch button.on{background:var(--primary);color:var(--on-primary)}
+
+@media(max-width:900px){
+  .sidebar{left:14px;width:auto}
+  .joincard{display:none}
+}
+</style>
+</head>
+<body data-theme="light">
+
+<!-- ============ MAP ============ -->
+<div class="map">
+  <svg viewBox="0 0 1400 900" preserveAspectRatio="xMidYMid slice">
+    <g stroke="var(--map-line)" stroke-width="1.5" fill="none" opacity=".8">
+      <path d="M-50 220 L1450 190"/><path d="M-50 460 L1450 500"/><path d="M-50 700 L1450 660"/>
+      <path d="M200 -50 L240 950"/><path d="M560 -50 L520 950"/><path d="M900 -50 L950 950"/><path d="M1220 -50 L1180 950"/>
+    </g>
+    <path d="M300 700 C420 600, 380 480, 520 430 S760 400, 840 300 S1000 220, 1080 250"
+      stroke="#38bdf8" stroke-width="4" fill="none" stroke-linecap="round" opacity=".85"/>
+    <path d="M300 700 C400 640, 460 560, 600 520 S820 470, 900 360"
+      stroke="#fb7185" stroke-width="4" fill="none" stroke-linecap="round" stroke-dasharray="10 8" opacity=".8"/>
+    <path d="M300 700 C380 620, 500 620, 620 560 S780 520, 870 420"
+      stroke="#4ade80" stroke-width="4" fill="none" stroke-linecap="round" opacity=".75"/>
+    <g>
+      <circle cx="300" cy="700" r="13" fill="#4f7cff" stroke="#fff" stroke-width="4"/>
+      <circle cx="1080" cy="250" r="13" fill="#fbbf24" stroke="#fff" stroke-width="4"/>
+      <circle cx="520" cy="430" r="10" fill="#38bdf8" stroke="#fff" stroke-width="3"/>
+      <circle cx="840" cy="300" r="10" fill="#38bdf8" stroke="#fff" stroke-width="3"/>
+      <circle cx="600" cy="520" r="10" fill="#fb7185" stroke="#fff" stroke-width="3"/>
+      <circle cx="620" cy="560" r="10" fill="#4ade80" stroke="#fff" stroke-width="3"/>
+      <circle cx="900" cy="360" r="15" fill="#fb7185" opacity=".25"><animate attributeName="r" values="14;26;14" dur="2s" repeatCount="indefinite"/></circle>
+      <circle cx="900" cy="360" r="8" fill="#fb7185" stroke="#fff" stroke-width="3"/>
+    </g>
+  </svg>
+</div>
+
+<!-- ============ TOP BAR ============ -->
+<div class="topbar">
+  <div class="brand">
+    <div class="logo">🧭</div>
+    <div><b>Operation Roadtrip</b><span>Spelledarpanel</span></div>
+  </div>
+  <select class="op-select">
+    <option>Öland 2026 — Etapp 1</option>
+    <option>Skåne Runt</option>
+    <option>+ Ny operation…</option>
+  </select>
+  <div class="live-pill"><span class="d"></span> SYSTEM ÖPPET</div>
+  <div class="spacer"></div>
+  <button class="tb-btn">🗺 Simulera GPS</button>
+  <button class="tb-btn on">🚶 Gångläge</button>
+  <button class="tb-btn">🏁 Resultat</button>
+  <button class="tb-btn">⟳</button>
+  <button class="tb-btn danger">✕ Nollställ</button>
+  <div class="avatar">AR</div>
+</div>
+
+<!-- ============ JOIN CODE ============ -->
+<div class="joincard">
+  <div class="lbl">Anslutningskod till spelarna</div>
+  <div class="row">
+    <span class="code">KX9-4TM</span>
+    <button class="mini" title="Kopiera">⧉</button>
+    <button class="mini" title="Ny kod">⟳</button>
+  </div>
+</div>
+
+<!-- ============ SIDEBAR ============ -->
+<div class="sidebar">
+  <div class="tabs">
+    <button class="tab on" onclick="go('live',this)">📡 Live <span class="cnt">4</span></button>
+    <button class="tab" onclick="go('teams',this)">👥 Lag</button>
+    <button class="tab" onclick="go('route',this)">🗺 Rutt</button>
+    <button class="tab" onclick="go('sab',this)">🃏 Joker <span class="cnt">2</span></button>
+    <button class="tab" onclick="go('op',this)">⚙️ Operation</button>
+  </div>
+
+  <div class="panel">
+
+    <!-- ---------- LIVE ---------- -->
+    <div class="pane on" id="live">
+      <div class="grp">Poängliga <span style="color:var(--text-3);font-weight:500;text-transform:none;letter-spacing:0">uppdateras live</span></div>
+      <div class="lb-row top"><span class="rank">🥇</span><div class="lb-b" style="flex:1"><div class="lb-name">Lag Blå</div><div class="lb-sub">3 checkpoints · 01:42:18</div></div><span class="pts" style="color:var(--c-amber)">185</span></div>
+      <div class="lb-row"><span class="rank">2</span><div style="flex:1"><div class="lb-name">Lag Grön</div><div class="lb-sub">3 checkpoints · 01:51:40</div></div><span class="pts">160</span></div>
+      <div class="lb-row"><span class="rank">3</span><div style="flex:1"><div class="lb-name">Lag Röd</div><div class="lb-sub">2 checkpoints · sabotage −25</div></div><span class="pts">115</span></div>
+      <div class="lb-row"><span class="rank">4</span><div style="flex:1"><div class="lb-name">Lag Gul</div><div class="lb-sub">2 checkpoints · fusk −30</div></div><span class="pts">90</span></div>
+
+      <div class="grp">Lagstatus</div>
+
+      <div class="card">
+        <div class="tc-head">
+          <div class="tc-avatar" style="background:#38bdf8">B</div>
+          <div class="tc-name">Lag Blå</div>
+          <span class="chip ok">På rutt</span>
+        </div>
+        <div class="prog-lbl"><span>Uppdrag <b>3 / 5</b></span><span>60 %</span></div>
+        <div class="bar"><i style="width:60%;background:#38bdf8"></i></div>
+        <div class="stats">
+          <div class="stat"><b>42.1</b><span>km</span></div>
+          <div class="stat"><b>2.4 %</b><span>avvikelse</span></div>
+          <div class="stat"><b>12s</b><span>sen ping</span></div>
+        </div>
+        <div class="acts"><button class="act">← Föreg. CP</button><button class="act">Nästa CP →</button><button class="act danger">Kicka</button></div>
+      </div>
+
+      <div class="card">
+        <div class="tc-head">
+          <div class="tc-avatar" style="background:#fb7185">R</div>
+          <div class="tc-name">Lag Röd</div>
+          <span class="chip bad">Fusklås</span>
+        </div>
+        <div class="prog-lbl"><span>Uppdrag <b>2 / 5</b></span><span>40 %</span></div>
+        <div class="bar"><i style="width:40%;background:#fb7185"></i></div>
+        <div class="stats">
+          <div class="stat"><b>31.6</b><span>km</span></div>
+          <div class="stat"><b>11.8 %</b><span>avvikelse</span></div>
+          <div class="stat" style="background:color-mix(in srgb,var(--c-rose) 12%,transparent)"><b style="color:var(--c-rose)">2</b><span>fusk</span></div>
+        </div>
+        <div class="acts"><button class="act">← Föreg. CP</button><button class="act">Nästa CP →</button><button class="act danger">Kicka</button></div>
+      </div>
+
+      <div class="card">
+        <div class="tc-head">
+          <div class="tc-avatar" style="background:#4ade80">G</div>
+          <div class="tc-name">Lag Grön</div>
+          <span class="chip warn">Avviker</span>
+        </div>
+        <div class="prog-lbl"><span>Uppdrag <b>3 / 5</b></span><span>60 %</span></div>
+        <div class="bar"><i style="width:60%;background:#4ade80"></i></div>
+        <div class="stats">
+          <div class="stat"><b>38.9</b><span>km</span></div>
+          <div class="stat"><b>7.1 %</b><span>avvikelse</span></div>
+          <div class="stat"><b>4s</b><span>sen ping</span></div>
+        </div>
+        <div class="acts"><button class="act">← Föreg. CP</button><button class="act">Nästa CP →</button><button class="act danger">Kicka</button></div>
+      </div>
+
+      <div class="grp">Ankomstlogg</div>
+      <div class="card" style="padding:6px 15px">
+        <div class="log"><span class="log-t">14:22</span><div><b>Lag Blå</b> nådde <b>Solliden</b><p>Bildbevis godkänt · +25 p</p></div></div>
+        <div class="log"><span class="log-t">14:08</span><div><b>Lag Grön</b> nådde <b>Borgholm</b><p>Bildbevis godkänt · +25 p</p></div></div>
+        <div class="log"><span class="log-t">13:51</span><div><b>Lag Röd</b> fick fusklås<p>Appen lämnad i 41 s · −30 p</p></div></div>
+      </div>
+
+      <div class="grp">Lagchatt</div>
+      <div class="card" style="padding:6px 15px">
+        <div class="log"><span class="log-t">14:19</span><div><b>Lag Gul</b><p>Vi står vid fyren men hittar ingen skylt?</p></div></div>
+        <div class="log"><span class="log-t">14:20</span><div><b>Spelledare</b><p>Kolla baksidan mot vattnet 👀</p></div></div>
+      </div>
+      <div class="field" style="margin-top:10px"><input placeholder="Skriv till alla lag…"></div>
+    </div>
+
+    <!-- ---------- TEAMS ---------- -->
+    <div class="pane" id="teams">
+      <div class="grp">Lagindelning <button class="tb-btn" style="padding:5px 11px;font-size:11px">+ Nytt lag</button></div>
+
+      <div class="card">
+        <div class="tc-head"><div class="tc-avatar" style="background:#38bdf8">B</div><div class="tc-name">Lag Blå</div><span class="chip ok">4 spelare</span></div>
+        <div class="roster"><span class="nm">Anna Lind</span><span class="chip ok" style="font-size:9.5px">Navigatör</span></div>
+        <div class="roster"><span class="nm">Erik Ström</span><select><option>Agent</option><option>Joker</option></select></div>
+        <div class="roster"><span class="nm">Maja Ek</span><span class="tag-joker">🃏 Joker</span></div>
+        <div class="roster"><span class="nm">Jonas Berg</span><select><option>Agent</option><option>Joker</option></select></div>
+      </div>
+
+      <div class="card">
+        <div class="tc-head"><div class="tc-avatar" style="background:#fb7185">R</div><div class="tc-name">Lag Röd</div><span class="chip ok">3 spelare</span></div>
+        <div class="roster"><span class="nm">Sara Nyman</span><span class="chip ok" style="font-size:9.5px">Navigatör</span></div>
+        <div class="roster"><span class="nm">Ali Hassan</span><span class="tag-joker">🃏 Joker</span></div>
+        <div class="roster"><span class="nm">Petra Vik</span><select><option>Agent</option><option>Joker</option></select></div>
+      </div>
+
+      <button class="btn-soft">🎲 Slumpa jokrar</button>
+      <button class="btn-soft">⧉ Kopiera laguppställning</button>
+    </div>
+
+    <!-- ---------- ROUTE ---------- -->
+    <div class="pane" id="route">
+      <div class="grp">Rutt-generator</div>
+      <div class="card">
+        <div class="field"><label>Antal checkpoints per lag</label><input type="number" value="5"></div>
+        <div class="field"><label>Radie från startpunkt (km)</label><input type="number" value="25"></div>
+        <div class="field"><label>Svårighetsgrad</label><select><option>Lagom</option><option>Lätt</option><option>Brutal</option></select></div>
+        <button class="btn-full">⚡ Generera rutter</button>
+      </div>
+
+      <div class="grp">Nyckelpunkter</div>
+      <div class="cp"><div class="cp-n" style="background:#4f7cff">S</div><div class="cp-b"><b>Startpunkt</b><span>56.6614, 16.3628</span></div><span class="drag">✎</span></div>
+      <div class="cp"><div class="cp-n" style="background:#a78bfa">Å</div><div class="cp-b"><b>Återsamling</b><span>56.8791, 16.6398</span></div><span class="drag">✎</span></div>
+      <div class="cp"><div class="cp-n" style="background:#fbbf24">M</div><div class="cp-b"><b>Mållinje</b><span>57.0212, 16.8455</span></div><span class="drag">✎</span></div>
+
+      <div class="grp">Checkpoints — Lag Blå <button class="tb-btn" style="padding:5px 11px;font-size:11px">+ Lägg till</button></div>
+      <div class="cp"><div class="cp-n" style="background:#38bdf8">1</div><div class="cp-b"><b>Borgholms slott</b><span>Uppdrag · 56.8791, 16.6398</span></div><span class="drag">⠿</span></div>
+      <div class="cp"><div class="cp-n" style="background:#38bdf8">2</div><div class="cp-b"><b>Solliden</b><span>Uppdrag · 56.8563, 16.6449</span></div><span class="drag">⠿</span></div>
+      <div class="cp"><div class="cp-n" style="background:#38bdf8">3</div><div class="cp-b"><b>Byxelkrok hamn</b><span>Foto · 57.3312, 17.0021</span></div><span class="drag">⠿</span></div>
+      <div class="cp"><div class="cp-n" style="background:#a78bfa">4</div><div class="cp-b"><b>Trollskogen</b><span>Återsamling · 57.3628, 17.0605</span></div><span class="drag">⠿</span></div>
+    </div>
+
+    <!-- ---------- SABOTAGE ---------- -->
+    <div class="pane" id="sab">
+      <div class="legend">
+        <i><b style="background:var(--c-lime)"></b> Stötta eget lag</i>
+        <i><b style="background:var(--c-rose)"></b> Stör annat lag</i>
+      </div>
+
+      <div class="grp">Pågår just nu</div>
+      <div class="sab">
+        <div class="sab-ico">🎯</div>
+        <div style="flex:1"><b>Flytta mål</b><span>Maja Ek (Blå) → Lag Gul · 3:12 kvar</span></div>
+        <span class="cost">−25 p</span>
+      </div>
+      <div class="sab help">
+        <div class="sab-ico">🛡</div>
+        <div style="flex:1"><b>Motmedel</b><span>Ali Hassan (Röd) → eget lag · 2:05 kvar</span></div>
+        <span class="cost">−20 p</span>
+      </div>
+
+      <div class="grp">Jokerlogg</div>
+      <div class="card" style="padding:6px 15px">
+        <div class="log"><span class="log-t">14:11</span><div><b>📡 Lås skärm</b><p>Maja Ek (Blå) → Lag Röd · −20 p</p></div></div>
+        <div class="log"><span class="log-t">13:58</span><div><b>🔭 Spaning</b><p>Petra Vik (Gul) → eget lag · −15 p</p></div></div>
+        <div class="log"><span class="log-t">13:44</span><div><b>📻 Falsk sändning</b><p>Ali Hassan (Röd) → Lag Blå · −10 p</p></div></div>
+      </div>
+
+      <div class="grp">Hemliga uppdrag (text)</div>
+      <div class="card">
+        <div class="field"><label>Mållag</label><select><option>Lag Gul</option><option>Lag Grön</option></select></div>
+        <div class="field"><label>Uppdragstext</label><textarea rows="3" placeholder="T.ex. Få hela laget att sjunga nationalsången vid nästa stopp…"></textarea></div>
+        <button class="btn-full">Skicka uppdrag</button>
+        <button class="btn-soft">🎲 Slumpa ur standardpoolen</button>
+      </div>
+    </div>
+
+    <!-- ---------- OPERATION ---------- -->
+    <div class="pane" id="op">
+      <div class="grp">Spelläge</div>
+      <div class="seg">
+        <button class="on">🎖 Spel</button>
+        <button>🌿 Utforskning</button>
+      </div>
+      <p class="hint"><b>Spel</b> — bildbevis vid checkpoints, fuskdetektering med rödlås och strafftid, samt en joker per lag som kan stötta sitt eget lag eller störa ett annat.<br><br>
+      <b>Utforskning</b> — samma rutt och kompass, men inga krav: frivilliga foton, inget fusksystem, egen position syns på kartan. Ändringen slår igenom direkt hos alla anslutna spelare.</p>
+
+      <div class="grp">Operationer</div>
+      <div class="cp"><div class="cp-n" style="background:var(--c-lime)">●</div><div class="cp-b"><b>Öland 2026 — Etapp 1</b><span>Live · 4 lag anslutna</span></div><span class="drag">⋯</span></div>
+      <div class="cp"><div class="cp-n" style="background:var(--text-3)">○</div><div class="cp-b"><b>Skåne Runt</b><span>Utkast · 6 checkpoints</span></div><span class="drag">⋯</span></div>
+      <div class="cp"><div class="cp-n" style="background:var(--text-3)">○</div><div class="cp-b"><b>Höglandet Höst</b><span>Avslutad · 2025-10-04</span></div><span class="drag">⋯</span></div>
+
+      <div class="grp">Ny operation</div>
+      <div class="card">
+        <div class="field"><label>Namn</label><input placeholder="T.ex. Gotland Vinter"></div>
+        <div class="field"><label>Antal lag</label><input type="number" value="4"></div>
+        <button class="btn-full">Skapa operation</button>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<div class="theme-switch">
+  <button class="on" onclick="setT('light',this)">☀︎ Ljust</button>
+  <button onclick="setT('dark',this)">☾ Mörkt</button>
+</div>
+
+<script>
+function go(id,el){
+  document.querySelectorAll('.pane').forEach(p=>p.classList.remove('on'));
+  document.getElementById(id).classList.add('on');
+  document.querySelectorAll('.tab').forEach(t=>t.classList.remove('on'));
+  el.classList.add('on');
+  document.querySelector('.panel').scrollTop=0;
+}
+function setT(t,el){
+  document.body.dataset.theme=t;
+  document.querySelectorAll('.theme-switch button').forEach(b=>b.classList.remove('on'));
+  el.classList.add('on');
+}
+</script>
+</body>
+</html>

@@ -1,10 +1,6 @@
 <template>
   <div class="role-overlay">
     <div class="role-frame" :class="frameTheme">
-      <div class="corner top-left"></div>
-      <div class="corner top-right"></div>
-      <div class="corner bottom-left"></div>
-      <div class="corner bottom-right"></div>
 
       <div class="role-head">
         <span class="head-label">PERSONALAKT // KLASSIFICERAD</span>
@@ -66,39 +62,65 @@
         <template v-if="role === 'sabotor'">
           <div class="role-icon">🕶️</div>
           <h1 class="role-status">HEMLIG ROLL</h1>
-          <h2 class="role-title is-sab">SABOTÖR</h2>
+          <h2 class="role-title is-sab">JOKERN</h2>
           <div class="role-divider"></div>
           <p class="role-copy">
-            Du spelar med ditt lag som vanligt — men du har dessutom
-            <strong>sabotage-förmågor riktade mot de andra lagen</strong>.
-            Ditt lag känner till din roll, men de andra lagen har ingen aning
-            om vem du är. Allt loggas hos spelledningen och avslöjas för alla
-            vid resultatet.
+            Du spelar med ditt lag som vanligt — men du har
+            <strong>fältutrustning de andra saknar</strong>. Du kan lyfta ditt
+            eget lag, eller sätta käppar i hjulen för ett annat. Ditt lag vet
+            vem du är; övriga lag får bara gissa. Allt loggas hos spelledningen
+            och avslöjas för alla vid resultatet.
           </p>
 
-          <!-- Active effects fired by this saboteur -->
+          <div class="joker-dual">
+            <div class="jd-help"><b>STÖTTA</b><span>Lyft ditt eget lag</span></div>
+            <div class="jd-harm"><b>STÖR</b><span>Sinka ett annat</span></div>
+          </div>
+
+          <!-- Anything this joker currently has running, either direction -->
           <div v-if="ownActiveEffects.length" class="fx-active-box">
             <div v-for="fx in ownActiveEffects" :key="fx.id" class="fx-active-row">
-              ⚡ {{ abilityLabel(fx.type) }} mot {{ teamLabel(fx.targetTeam) }} — {{ secondsLeft(fx) }}s kvar
+              {{ isSelfAbility(fx.type) ? '🛡' : '⚡' }}
+              {{ abilityLabel(fx.type) }}
+              {{ isSelfAbility(fx.type) ? '— eget lag' : `mot ${teamLabel(fx.targetTeam)}` }}
+              — {{ secondsLeft(fx) }}s kvar
             </div>
           </div>
 
           <!-- Ability console -->
           <div class="sab-console">
-            <div class="sab-console-title">SABOTAGE-KONSOL</div>
+            <div class="sab-console-title">JOKERKONSOL</div>
 
-            <label class="role-label">MÅLLAG
-              <select v-model="targetTeam" class="role-input">
-                <option disabled value="">Välj mållag…</option>
-                <option v-for="t in targetTeams" :key="t.key" :value="t.key">{{ t.name }}</option>
-              </select>
-            </label>
-
+            <!-- One cooldown covers both directions, so it sits above the
+                 split rather than inside either half. -->
             <div v-if="cooldownLeftMs > 0" class="sab-cooldown">
-              ⏳ NEDKYLNING: nästa sabotage om {{ formatCooldown(cooldownLeftMs) }}
+              ⏳ NEDKYLNING: nästa förmåga om {{ formatCooldown(cooldownLeftMs) }}
+              <span class="cd-note">Gäller både stötta och stör</span>
             </div>
 
-            <div v-for="a in abilityRows" :key="a.type" class="ability-card" :class="{ 'is-spent': a.chargesLeft === 0 }">
+            <div class="console-tabs">
+              <button :class="{ active: consoleTab === 'help' }" @click="consoleTab = 'help'">🛡 Stötta oss</button>
+              <button :class="{ active: consoleTab === 'harm' }" @click="consoleTab = 'harm'">🎯 Stör dem</button>
+            </div>
+
+            <template v-if="consoleTab === 'harm'">
+              <label class="role-label">MÅLLAG
+                <select v-model="targetTeam" class="role-input">
+                  <option disabled value="">Välj mållag…</option>
+                  <option v-for="t in targetTeams" :key="t.key" :value="t.key">{{ t.name }}</option>
+                </select>
+              </label>
+            </template>
+            <p v-else class="console-hint">
+              Riktas alltid mot ditt eget lag — inget mållag att välja.
+            </p>
+
+            <div
+              v-for="a in visibleAbilities"
+              :key="a.type"
+              class="ability-card"
+              :class="{ 'is-spent': a.chargesLeft === 0, 'is-help': a.target === 'self' }"
+            >
               <div class="ability-head">
                 <span class="ability-name">{{ a.icon }} {{ a.label }}</span>
                 <span class="ability-charges">{{ a.chargesLeft }}/{{ a.maxUses }} laddningar</span>
@@ -107,14 +129,15 @@
               <div class="ability-cost">💰 Kostar {{ a.cost }} poäng av lagets totalpoäng</div>
               <button
                 class="ability-fire-btn"
-                :disabled="!targetTeam || a.chargesLeft === 0 || cooldownLeftMs > 0 || firing"
+                :class="{ 'is-help': a.target === 'self' }"
+                :disabled="(a.target === 'enemy' && !targetTeam) || a.chargesLeft === 0 || cooldownLeftMs > 0 || firing"
                 @click="fireAbility(a.type)"
               >
                 {{ firing === a.type ? 'AKTIVERAR…' : `AKTIVERA (−${a.cost} p)` }}
               </button>
             </div>
 
-            <div v-if="fireResult" class="fx-fired">{{ fireResult }}</div>
+            <div v-if="fireResult" class="fx-fired" :class="{ 'is-blocked': fireBlocked }">{{ fireResult }}</div>
           </div>
 
           <!-- Optional text missions -->
@@ -254,6 +277,22 @@ const abilityRows = computed(() =>
   }))
 )
 
+// Which half of the console is showing. Support first: when a team is lost or
+// under attack that's the urgent case, and it nudges the joker to think of the
+// role as two-way rather than purely offensive.
+const consoleTab = ref('help')
+
+const visibleAbilities = computed(() =>
+  abilityRows.value.filter(a => (consoleTab.value === 'help' ? a.target === 'self' : a.target === 'enemy'))
+)
+
+const isSelfAbility = (type) =>
+  SABOTAGE_ABILITY_DEFS.find(a => a.type === type)?.target === 'self'
+
+// Set when the server rejects an attack because the target is shielded — the
+// message is styled differently since nothing was actually spent.
+const fireBlocked = ref(false)
+
 const cooldownLeftMs = computed(() => {
   const lastAt = ownLogEntries.value.reduce((max, e) => Math.max(max, e.at || 0), 0)
   if (!lastAt) return 0
@@ -326,23 +365,48 @@ function changeIdentity() {
 }
 
 async function fireAbility(type) {
-  if (firing.value || !targetTeam.value) return
+  if (firing.value) return
   const def = SABOTAGE_ABILITY_DEFS.find(a => a.type === type)
-  // Strategic tradeoff: sabotage drains the saboteur's OWN team's score.
+  const self = def?.target === 'self'
+  // Enemy abilities need a target; self-targeted ones always resolve onto our
+  // own team (and the server ignores targetTeam for them regardless).
+  if (!self && !targetTeam.value) return
+
+  // Both directions drain the joker's OWN team's score, so both get confirmed.
   const ok = window.confirm(
-    `Aktivera ${abilityLabel(type)} mot ${teamLabel(targetTeam.value)}?\n\n` +
-    `Detta kostar ${def?.cost ?? '?'} poäng av ERT lags totalpoäng och avslöjas i resultatet.`
+    self
+      ? `Aktivera ${abilityLabel(type)} för ert eget lag?\n\n` +
+        `Detta kostar ${def?.cost ?? '?'} poäng av ERT lags totalpoäng och avslöjas i resultatet.`
+      : `Aktivera ${abilityLabel(type)} mot ${teamLabel(targetTeam.value)}?\n\n` +
+        `Detta kostar ${def?.cost ?? '?'} poäng av ERT lags totalpoäng och avslöjas i resultatet.`
   )
   if (!ok) return
   firing.value = type
   error.value = ''
+  fireBlocked.value = false
   try {
-    const res = await api.useSabotageAbility(pickedTeam.value, pickedName.value.trim(), type, targetTeam.value)
-    fireResult.value = `⚡ ${abilityLabel(type)} aktiverad mot ${teamLabel(targetTeam.value)}! −${res?.cost ?? def?.cost ?? 0} p för ert lag, ${res?.chargesLeft ?? 0} laddning(ar) kvar.`
+    const res = await api.useSabotageAbility(
+      pickedTeam.value, pickedName.value.trim(), type,
+      self ? pickedTeam.value : targetTeam.value
+    )
+    const cost = res?.cost ?? def?.cost ?? 0
+    fireResult.value = self
+      ? `🛡 ${abilityLabel(type)} aktiverad för ert lag! −${cost} p, ${res?.chargesLeft ?? 0} laddning(ar) kvar.`
+      : `⚡ ${abilityLabel(type)} aktiverad mot ${teamLabel(targetTeam.value)}! −${cost} p för ert lag, ${res?.chargesLeft ?? 0} laddning(ar) kvar.`
     if (fireResultTimer) clearTimeout(fireResultTimer)
     fireResultTimer = setTimeout(() => { fireResult.value = '' }, 8000)
   } catch (e) {
-    error.value = extractServerError(e) || 'Kunde inte aktivera förmågan. Försök igen.'
+    const msg = extractServerError(e) || ''
+    // A blocked hit costs nothing. Say that explicitly — otherwise it reads as
+    // a wasted charge and the joker will assume the console is broken.
+    if (/skyddat/i.test(msg)) {
+      fireBlocked.value = true
+      fireResult.value = `🛡 ${teamLabel(targetTeam.value)} har ett motmedel igång. Inget drogs — varken laddning eller nedkylning.`
+      if (fireResultTimer) clearTimeout(fireResultTimer)
+      fireResultTimer = setTimeout(() => { fireResult.value = ''; fireBlocked.value = false }, 8000)
+    } else {
+      error.value = msg || 'Kunde inte aktivera förmågan. Försök igen.'
+    }
   } finally {
     firing.value = ''
   }
@@ -405,8 +469,8 @@ onMounted(() => {
   align-items: center;
   justify-content: safe center;
   z-index: 9800;
-  font-family: 'JetBrains Mono', 'Courier New', monospace;
-  color: #00ccff;
+  font-family: 'JetBrains Mono', var(--font-mono);
+  color: var(--primary);
   padding: 20px;
   box-sizing: border-box;
   overflow: auto;
@@ -418,8 +482,8 @@ onMounted(() => {
   inset: 0;
   background: repeating-linear-gradient(
     0deg,
-    rgba(0, 204, 255, 0.025) 0px,
-    rgba(0, 204, 255, 0.025) 1px,
+    color-mix(in srgb, var(--primary) 18%, transparent) 0px,
+    color-mix(in srgb, var(--primary) 18%, transparent) 1px,
     transparent 1px,
     transparent 3px
   );
@@ -429,16 +493,17 @@ onMounted(() => {
 .role-frame {
   position: relative;
   width: 100%;
-  max-width: 460px;
+  max-width: var(--panel-max);
   max-height: calc(100vh - 40px);
   max-height: calc(100dvh - 40px);
   overflow-y: auto;
   padding: 28px 24px 20px;
-  background: rgba(0, 0, 0, 0.92);
-  border: 1px solid rgba(0, 204, 255, 0.3);
-  border-left: 4px solid #00ccff;
-  box-shadow: 0 0 50px rgba(0, 204, 255, 0.15), inset 0 0 30px rgba(0, 204, 255, 0.04);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--primary);
+  box-shadow: var(--shadow-lg);
   box-sizing: border-box;
+  border-radius: var(--r-xl);
 }
 
 .role-frame.theme-sab {
@@ -451,17 +516,8 @@ onMounted(() => {
   border-left-color: #00ff88;
 }
 
-.corner {
-  position: absolute;
-  width: 15px;
-  height: 15px;
-  border: 2px solid currentColor;
-  opacity: 0.6;
-}
-.top-left     { top: 6px;    left: 6px;   border-right: none; border-bottom: none; }
-.top-right    { top: 6px;    right: 6px;  border-left: none;  border-bottom: none; }
-.bottom-left  { bottom: 6px; left: 6px;   border-right: none; border-top: none; }
-.bottom-right { bottom: 6px; right: 6px;  border-left: none;  border-top: none; }
+.corner { display: none; }
+
 
 .role-head {
   display: flex;
@@ -476,7 +532,7 @@ onMounted(() => {
 .close-btn {
   background: transparent;
   border: none;
-  color: #888;
+  color: var(--text-2);
   font-size: 1.3rem;
   cursor: pointer;
   line-height: 1;
@@ -494,7 +550,7 @@ onMounted(() => {
 .role-icon {
   font-size: 2.6rem;
   margin-bottom: 8px;
-  filter: drop-shadow(0 0 10px rgba(0, 204, 255, 0.35));
+  filter: drop-shadow(0 0 10px color-mix(in srgb, var(--primary) 18%, transparent));
 }
 
 .role-status {
@@ -519,7 +575,7 @@ onMounted(() => {
 }
 
 .role-title.is-agent {
-  color: #00ff88;
+  color: var(--c-lime);
   text-shadow: 0 0 16px rgba(0, 255, 136, 0.45);
 }
 
@@ -554,8 +610,8 @@ onMounted(() => {
   width: 100%;
   box-sizing: border-box;
   background: #000;
-  border: 1px solid rgba(0, 204, 255, 0.4);
-  color: #fff;
+  border: 1px solid color-mix(in srgb, var(--primary) 18%, transparent);
+  color: var(--text);
   font-family: inherit;
   font-size: 0.9rem;
   padding: 11px 12px;
@@ -564,13 +620,13 @@ onMounted(() => {
 
 .role-hint {
   font-size: 0.7rem;
-  color: #888;
+  color: var(--text-2);
   line-height: 1.4;
   margin-bottom: 12px;
 }
 
 .role-error {
-  color: #ff6666;
+  color: var(--c-rose);
   font-size: 0.75rem;
   line-height: 1.4;
   margin-bottom: 12px;
@@ -603,7 +659,7 @@ onMounted(() => {
 
 .role-btn.ghost {
   border-color: rgba(255, 255, 255, 0.25);
-  color: #999;
+  color: var(--text-2);
   margin-top: 12px;
 }
 .role-btn.ghost:hover { background: rgba(255, 255, 255, 0.08); color: #fff; }
@@ -631,7 +687,7 @@ onMounted(() => {
 .sab-cooldown {
   border: 1px dashed rgba(255, 204, 0, 0.5);
   background: rgba(255, 204, 0, 0.07);
-  color: #ffcc00;
+  color: var(--c-amber);
   font-size: 0.68rem;
   font-weight: 700;
   letter-spacing: 0.06em;
@@ -668,7 +724,7 @@ onMounted(() => {
 
 .ability-charges {
   font-size: 0.6rem;
-  color: #888;
+  color: var(--text-2);
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
 }
@@ -684,7 +740,7 @@ onMounted(() => {
   font-size: 0.64rem;
   font-weight: 700;
   letter-spacing: 0.04em;
-  color: #ffcc00;
+  color: var(--c-amber);
   margin-bottom: 8px;
 }
 
@@ -722,7 +778,7 @@ onMounted(() => {
 }
 
 .fx-fired {
-  color: #00ff88;
+  color: var(--c-lime);
   font-size: 0.7rem;
   line-height: 1.4;
   margin-top: 4px;
@@ -760,7 +816,7 @@ onMounted(() => {
 .mission-text {
   font-size: 0.82rem;
   line-height: 1.5;
-  color: #eee;
+  color: var(--text);
   margin-bottom: 10px;
 }
 
@@ -784,7 +840,7 @@ onMounted(() => {
 .mission-done-btn:disabled { opacity: 0.5; cursor: wait; }
 
 .mission-done-tag {
-  color: #00ff88;
+  color: var(--c-lime);
   font-size: 0.68rem;
   font-weight: 800;
   letter-spacing: 0.1em;
@@ -795,7 +851,7 @@ onMounted(() => {
   box-sizing: border-box;
   border: 1px dashed rgba(255, 204, 0, 0.5);
   background: rgba(255, 204, 0, 0.07);
-  color: #ffcc00;
+  color: var(--c-amber);
   font-size: 0.65rem;
   font-weight: 800;
   letter-spacing: 0.12em;
@@ -805,7 +861,7 @@ onMounted(() => {
 
 .scanner-line {
   height: 1px;
-  background: rgba(0, 204, 255, 0.18);
+  background: color-mix(in srgb, var(--primary) 18%, transparent);
   position: relative;
   overflow: hidden;
   margin: 18px 0 10px;
@@ -833,6 +889,91 @@ onMounted(() => {
   justify-content: space-between;
   font-size: 0.58rem;
   letter-spacing: 0.12em;
-  color: #555;
+  color: var(--text-3);
+}
+
+/* ---- joker console: two directions, one resource ---- */
+.joker-dual {
+  display: flex;
+  gap: 9px;
+  margin: 0 0 16px;
+}
+.joker-dual > div {
+  flex: 1;
+  border-radius: var(--r-sm);
+  padding: 10px 8px;
+  text-align: center;
+}
+.jd-help { background: color-mix(in srgb, var(--c-lime) 14%, transparent); }
+.jd-harm { background: color-mix(in srgb, var(--c-rose) 14%, transparent); }
+.joker-dual b {
+  display: block;
+  font-size: 0.68rem;
+  font-weight: 800;
+  margin-bottom: 2px;
+}
+.jd-help b { color: var(--c-lime); }
+.jd-harm b { color: var(--c-rose); }
+.joker-dual span {
+  display: block;
+  font-size: 0.6rem;
+  color: var(--text-3);
+  line-height: 1.35;
+}
+
+.console-tabs {
+  display: flex;
+  gap: 5px;
+  padding: 5px;
+  background: var(--surface-2);
+  border-radius: var(--r-pill);
+  margin-bottom: 14px;
+}
+.console-tabs button {
+  flex: 1;
+  font-family: var(--font);
+  font-size: 0.74rem;
+  font-weight: 700;
+  color: var(--text-2);
+  background: transparent;
+  border: 0;
+  padding: 10px 6px;
+  border-radius: var(--r-pill);
+  cursor: pointer;
+  transition: background 0.18s, color 0.18s;
+}
+.console-tabs button.active {
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: var(--shadow-sm);
+}
+
+.console-hint {
+  font-size: 0.7rem;
+  color: var(--text-3);
+  line-height: 1.5;
+  margin: 0 0 12px;
+}
+
+.cd-note {
+  display: block;
+  margin-top: 3px;
+  font-size: 0.62rem;
+  font-weight: 500;
+  opacity: 0.8;
+}
+
+.ability-card.is-help {
+  border-color: color-mix(in srgb, var(--c-lime) 30%, transparent);
+  background: color-mix(in srgb, var(--c-lime) 6%, transparent);
+}
+.ability-fire-btn.is-help {
+  background: var(--c-lime);
+  color: #052e16;
+}
+
+.fx-fired.is-blocked {
+  background: color-mix(in srgb, var(--c-amber) 14%, transparent);
+  color: var(--c-amber);
 }
 </style>

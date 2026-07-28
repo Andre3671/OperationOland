@@ -5,10 +5,6 @@
          main.js and validated by /api/auth/me on mount. -->
     <div v-if="!authed" class="auth-overlay">
       <div class="auth-frame">
-        <div class="auth-corner top-left"></div>
-        <div class="auth-corner top-right"></div>
-        <div class="auth-corner bottom-left"></div>
-        <div class="auth-corner bottom-right"></div>
 
         <div class="auth-heading">
           <span class="auth-prefix">ADMIN //</span>
@@ -51,6 +47,7 @@
     <AdminMap
       v-if="!error"
       class="admin-mapbg"
+      :operationId="activeOperationId"
       :idealRoutes="activeIdealRoutes"
       :actualRoutes="actualRoutes"
       :livePoints="livePoints"
@@ -65,7 +62,13 @@
 
     <header class="admin-header">
       <div class="admin-header-left">
-        <div class="admin-title">ADMIN // OPERATION ROADTRIP</div>
+        <div class="admin-brand">
+          <span class="brand-logo">🧭</span>
+          <span class="brand-text">
+            <b>Operation Roadtrip</b>
+            <span>Spelledarpanel</span>
+          </span>
+        </div>
         <select
           v-if="operationsList.length"
           class="op-select"
@@ -76,561 +79,619 @@
           <option v-for="op in operationsList" :key="op.id" :value="op.id">{{ op.name }}</option>
           <option value="__new__">+ Ny operation…</option>
         </select>
-        <button class="header-btn" @click="saveOperationAs" title="Spara nuvarande läge/resultat som en egen operation i listan">SPARA SOM</button>
-        <div class="admin-op-pill" :class="{ 'is-active': isOperationActive }" @click="toggleOperation">
+        <button class="header-btn" @click="saveOperationAs" title="Spara nuvarande läge/resultat som en egen operation i listan">Spara som</button>
+        <button class="admin-op-pill" :class="{ 'is-active': isOperationActive }" @click="toggleOperation"
+                :title="isOperationActive ? 'Öppet — lagen kan ansluta och registrera ankomster' : 'Låst — lagen kommer inte in'">
           <span class="admin-op-dot"></span>
-          {{ isOperationActive ? 'SYSTEM ÖPPET' : 'LÅST FÖR TEAM' }}
-        </div>
+          {{ isOperationActive ? 'System öppet' : 'Låst för team' }}
+        </button>
       </div>
 
       <div class="admin-header-right">
-        <span v-if="authUser" class="auth-user" :title="`Inloggad som ${authUser}`">{{ authUser }}</span>
-        <button class="header-btn" @click="logout" title="Logga ut">LOGGA UT</button>
-        <router-link to="/admin/results" class="header-btn header-link" title="Resultatöversikt">RESULTAT</router-link>
-        <button class="header-btn" @click="refresh" title="Uppdatera">⟳</button>
+        <router-link to="/admin/results" class="header-btn header-link" title="Resultatöversikt">🏁 Resultat</router-link>
         <button
           class="header-btn"
           :class="{ active: isSimulationMode }"
           @click="toggleSharedSimulation"
           title="Simulerad GPS: när aktivt ignorerar lag-vyer riktig GPS och använder positioner du sätter här"
         >
-          {{ isSimulationMode ? 'SIM GPS PÅ' : 'SIM GPS' }}
+          🗺 Sim GPS<template v-if="isSimulationMode"> på</template>
         </button>
-        <button
-          class="header-btn"
-          :class="{ active: walkingMode }"
-          @click="toggleWalkingMode"
-          title="Gång-mode: krymper checkpoint-radius till 50m för att kräva närvaro till fots"
-        >
-          {{ walkingMode ? 'GÅNG PÅ' : 'GÅNG' }}
+        <button class="header-btn icon-only" @click="refresh" title="Uppdatera">⟳</button>
+        <button class="header-btn icon-only" @click="toggleAdminTheme" :title="adminDark ? 'Byt till ljust läge' : 'Byt till mörkt läge'">
+          {{ adminDark ? '☀︎' : '☾' }}
         </button>
-        <button class="header-btn danger" @click="resetAll" title="Nollställ allt">✕</button>
-        <button class="header-btn sidebar-toggle" @click="sidebarOpen = !sidebarOpen" :title="sidebarOpen ? 'Stäng panel' : 'Öppna panel'">
+        <button class="header-btn danger icon-only" @click="resetAll" title="Nollställ allt">✕</button>
+        <div class="header-user" v-if="authUser">
+          <span class="user-chip" :title="`Inloggad som ${authUser}`">{{ authInitials }}</span>
+          <button class="header-btn subtle" @click="logout" title="Logga ut">Logga ut</button>
+        </div>
+        <button class="header-btn icon-only sidebar-toggle" @click="sidebarOpen = !sidebarOpen" :title="sidebarOpen ? 'Stäng panel' : 'Öppna panel'">
           {{ sidebarOpen ? '▶' : '◀' }}
         </button>
       </div>
     </header>
 
     <!-- Join code for the live operation — this is what the players type in
-         the app to enter THIS admin's game. -->
-    <div v-if="liveJoinCode" class="join-code-banner">
-      <span class="jcb-label">ANSLUTNINGSKOD TILL SPELARNA:</span>
-      <button class="jcb-code" @click="copyJoinCode" title="Klicka för att kopiera koden">{{ liveJoinCode }}</button>
-      <span v-if="codeCopied" class="jcb-copied">✓ KOPIERAD</span>
-      <button class="jcb-regen" @click="regenerateCode" title="Generera ny kod — den gamla slutar gälla direkt">NY KOD ⟳</button>
+         the app to enter THIS admin's game. Given its own card because it's the
+         one thing the game master reads aloud to a room. -->
+    <div v-if="liveJoinCode" class="join-card">
+      <div class="jcb-label">Anslutningskod till spelarna</div>
+      <div class="jcb-row">
+        <button class="jcb-code" @click="copyJoinCode" title="Klicka för att kopiera koden">{{ liveJoinCode }}</button>
+        <button class="jcb-mini" @click="copyJoinCode" title="Kopiera koden">⧉</button>
+        <button class="jcb-mini" @click="regenerateCode" title="Generera ny kod — den gamla slutar gälla direkt">⟳</button>
+      </div>
+      <span v-if="codeCopied" class="jcb-copied">✓ Kopierad</span>
     </div>
 
     <aside class="admin-sidebar" v-if="ready">
-      <div class="sidebar-header">
-        <div class="sidebar-title">TEAM STATUS</div>
-        <div class="sidebar-subtitle">Live tracking, route deviation och total körd distans</div>
-      </div>
-
-      <!-- Play mode for THIS operation: game (full competition) or explore
-           (relaxed sightseeing). Editable while planning; broadcast live. -->
-      <div class="meeting-section">
-        <div class="section-title">SPELLÄGE</div>
-        <div class="mode-toggle-row">
-          <button
-            class="mode-pick-btn"
-            :class="{ active: mode === 'game' }"
-            @click="setOperationMode('game')"
-            title="Fullt spel: fototvång vid checkpoints, fuskdetektering med rödlås/strafftid, hemliga roller och sabotage."
-          >🎖 SPEL</button>
-          <button
-            class="mode-pick-btn is-explore"
-            :class="{ active: mode === 'explore' }"
-            @click="setOperationMode('explore')"
-            title="Avslappnad upptäcktsfärd: inga straff eller fototvång, lagets egen position syns på kartan, stoppen är infokort."
-          >🌿 UTFORSKNING</button>
-        </div>
-        <p class="gen-hint" style="margin-top: 8px;">
-          <b>SPEL</b> = som vanligt: bildbevis, fuskdetektering (rödlås + strafftid) och hemliga
-          roller med sabotage. <b>UTFORSKNING</b> = samma rutt och kompass, men inga krav:
-          foton är frivilliga minnesbilder, inget fusksystem, egen position syns på kartan
-          och checkpoints är bara "här finns något coolt"-stopp. Gäller denna operation och
-          slår igenom direkt hos anslutna spelare.
-        </p>
-      </div>
-
-      <!-- <div v-if="isLoading" class="sidebar-loading">Laddar data...</div> -->
-
-      <div class="sidebar-section">
-        <div v-for="team in teamSummaries" :key="team.team" class="team-card">
-          <div class="team-card-head">
-            <div class="team-card-title">{{ team.displayName }}</div>
-            <button class="kick-btn" @click="confirmKick(team)" :title="`Kicka ${team.displayName} — slotten blir ledig`">KICK</button>
-          </div>
-          <div class="team-row"><span>Uppdrag</span><span style="color: #00ccff; font-weight: bold;">{{ Math.min((teamProgress[team.team] || 0) + 1, checkpoints.filter(cp => cp.team === team.team).length) }} / {{ checkpoints.filter(cp => cp.team === team.team).length }}</span></div>
-          <div class="team-row"><span>Status</span><span :class="statusClass(team.status)">{{ team.status }}</span></div>
-          <div class="team-row"><span>Total distans</span><span>{{ team.distanceKm.toFixed(1) }} km</span></div>
-          <div class="team-row"><span>Avvikelse</span><span>{{ team.deviation.toFixed(1) }} %</span></div>
-          <div class="team-row"><span>Senaste position</span><span>{{ team.lastPosition || 'Ingen data' }}</span></div>
-          <div class="manual-override">
-            <button class="override-btn" @click="moveTeamCheckpoint(team.team, -1)">Föregående CP</button>
-            <button class="override-btn" @click="moveTeamCheckpoint(team.team, 1)">Nästa CP</button>
-          </div>
-          
-          <!-- Cheating Stats -->
-          <div class="team-row cheating-stats" v-if="teamCheating[team.team]?.offenses > 0">
-            <span>Fuskdetekteringar</span>
-            <span style="color: #ff3333; font-weight: bold;">
-              {{ teamCheating[team.team].offenses }} ({{ Math.floor(teamCheating[team.team].seconds / 60) }}m {{ teamCheating[team.team].seconds % 60 }}s)
-            </span>
-          </div>
-          
-          <!-- Debug Panel -->
-          <div v-if="isSimulationMode" class="debug-panel">
-            <div class="debug-row">
-              <label>Lat</label>
-              <input type="number" step="0.0001" v-model.number="debugPositions[team.team].lat" />
-            </div>
-            <div class="debug-row">
-              <label>Lng</label>
-              <input type="number" step="0.0001" v-model.number="debugPositions[team.team].lng" />
-            </div>
-            <button class="debug-update-btn" @click="updateTeamPosition(team.team)">Flytta Team</button>
-            <button class="debug-update-btn" @click="snapToIdeal(team.team)">Snap to ideal</button>
-          </div>
-        </div>
-      </div>
-
-      <div class="meeting-section">
-        <div class="section-title">POÄNGLIGA</div>
-        <div class="scoring-info">
-          <div v-if="leaderboard.length === 0" class="log-empty">Inga lag ännu.</div>
-          <div v-else class="scoreboard">
-            <div v-for="(row, idx) in leaderboard" :key="row.team" class="score-row" :style="{ '--team-color': row.color }">
-              <div class="score-rank">{{ idx + 1 }}</div>
-              <div class="score-body">
-                <div class="score-head">
-                  <span class="score-name" :style="{ color: row.color }">{{ row.displayName }}</span>
-                  <span class="score-total">{{ row.total }} p</span>
-                </div>
-                <div class="score-progress">
-                  CP {{ row.completed }}/{{ row.totalCheckpoints }} · {{ row.arrivals }} ankomster · {{ row.totalMinutes }} min
-                </div>
-                <div class="score-breakdown">
-                  <span class="bd-pos">+{{ row.breakdown.arrival }}</span><span class="bd-label">ankomst</span>
-                  <span class="bd-pos">+{{ row.breakdown.missionComplete }}</span><span class="bd-label">uppdrag</span>
-                  <span class="bd-pos">+{{ row.breakdown.meetingBonus }}</span><span class="bd-label">återsamling</span>
-                  <span class="bd-neg">{{ row.breakdown.cheatPenalty }}</span><span class="bd-label">fusk</span>
-                  <template v-if="row.breakdown.sabotagePenalty">
-                    <span class="bd-neg">{{ row.breakdown.sabotagePenalty }}</span><span class="bd-label">sabotage</span>
-                  </template>
-                </div>
-              </div>
-            </div>
-          </div>
-          <div class="scoring-legend">
-            +{{ SCORING.arrival }} ankomst · +{{ SCORING.missionComplete }} uppdrag slutfört · +{{ SCORING.meetingBonus }} gemensamt (återsamling) · −{{ SCORING.cheatOffense }} per fusk + −{{ SCORING.cheatPer30s }} / 30s<template v-if="mode === 'game'"> · sabotage kostar 10–25 p av eget lags poäng</template> · snabbast tid avgör vid lika poäng
-          </div>
-        </div>
-      </div>
-
-      <div class="meeting-section">
-        <div class="section-title">TEAM-CHATT</div>
-        <div class="chat-box">
-          <div class="chat-log">
-            <div v-if="chatMessages.length === 0" class="log-empty">Inga meddelanden ännu.</div>
-            <div v-for="msg in chatMessages.slice(-30)" :key="msg.id" class="chat-message" :class="{ 'is-admin': msg.role === 'admin' }">
-              <div class="chat-meta">
-                <span>{{ msg.senderName }}</span>
-                <span>{{ formatTime(msg.timestamp) }}</span>
-              </div>
-              <div class="chat-text">{{ msg.text }}</div>
-            </div>
-          </div>
-          <form class="chat-form" @submit.prevent="sendAdminChat">
-            <input v-model="adminChatDraft" class="checkpoint-input chat-input" maxlength="500" placeholder="Meddelande till alla team" />
-            <button class="add-btn chat-send" type="submit" :disabled="!adminChatDraft.trim()">Skicka</button>
-          </form>
-        </div>
-      </div>
-
-      <div class="meeting-section">
-        <div class="section-title">ANKOMSTLOGG</div>
-        <div class="arrival-log">
-          <div v-if="arrivalLog.length === 0" class="log-empty">Inga ankomster registrerade ännu.</div>
-          <div v-for="entry in arrivalLog.slice(0, 40)" :key="entry.id" class="arrival-entry">
-            <div class="arrival-head">
-              <span>{{ entry.teamName }}</span>
-              <span>{{ formatTime(entry.timestamp) }}</span>
-            </div>
-            <div class="arrival-body">
-              {{ entry.checkpointName }}
-              <span v-if="entry.checkpointTitle" class="arrival-title">{{ entry.checkpointTitle }}</span>
-            </div>
-            <div class="arrival-meta">
-              {{ entry.checkpointType.toUpperCase() }}
-              <span v-if="entry.distanceMeters != null"> · {{ entry.distanceMeters }} m från centrum</span>
-            </div>
-            <a v-if="photoUrl(entry)" :href="photoUrl(entry)" target="_blank" class="arrival-photo-link">
-              <img :src="photoUrl(entry)" class="arrival-photo" alt="lag-bild" loading="lazy" />
-            </a>
-          </div>
-        </div>
-      </div>
-
-      <!-- Operations catalog -->
-      <div class="meeting-section">
-        <div class="section-title">OPERATIONER</div>
-        <div class="op-list">
-          <div v-for="op in operationsList" :key="op.id" class="op-row" :class="{ 'is-live': op.id === activeOperationId }">
-            <span class="op-name">{{ op.name }}</span>
-            <span v-if="op.joinCode" class="op-code" :title="'Anslutningskod: ' + op.joinCode">{{ op.joinCode }}</span>
-            <span v-if="op.id === activeOperationId" class="op-live-tag">LIVE</span>
-            <div class="op-row-actions">
-              <button v-if="op.id !== activeOperationId" class="header-btn" @click="switchOperation(op.id)" title="Gör denna operation live">AKTIVERA</button>
-              <button class="header-btn" @click="renameOperationPrompt(op)" title="Byt namn">✎</button>
-              <button v-if="op.id !== activeOperationId" class="header-btn danger" @click="deleteOperationConfirm(op)" title="Ta bort permanent">✕</button>
-            </div>
-          </div>
-        </div>
-        <button class="add-btn" style="margin-top: 10px; width: 100%;" @click="openCreateOperation">+ Ny operation</button>
-      </div>
-
-      <!-- Team rosters (who rides in which car) -->
-      <div class="meeting-section" v-if="rosterTeams.length">
-        <div class="section-title">LAGINDELNING</div>
-        <div v-for="key in rosterTeams" :key="key" class="roster-team">
-          <div class="roster-team-name" :style="{ color: TEAM_COLORS[key] }">{{ teams[key]?.name || key.toUpperCase() }}</div>
-          <div class="roster-members">
-            <span v-for="(person, i) in teamRosters[key]" :key="i" class="roster-member" :class="{ 'is-driver': person.driver }">
-              {{ person.name }}<span v-if="person.driver" title="Har körkort — förare"> 🚗</span><span v-if="person.role === 'sabotor'" title="Lagets hemliga sabotör"> 🕶️</span>
-            </span>
-          </div>
-          <div v-if="mode === 'game'" class="roster-sab-row">
-            <label class="roster-sab-label">Sabotör:</label>
-            <select
-              class="checkpoint-input roster-sab-select"
-              :value="saboteurNameOf(key)"
-              @change="setSaboteur(key, $event.target.value)"
-            >
-              <option value="">— ingen —</option>
-              <option
-                v-for="p in teamRosters[key]"
-                :key="p.name"
-                :value="p.name"
-                :disabled="p.name === soleDriverOf(teamRosters[key])"
-              >{{ p.name }}{{ p.name === soleDriverOf(teamRosters[key]) ? ' (enda föraren)' : '' }}</option>
-            </select>
-          </div>
-        </div>
-        <button v-if="mode === 'game'" class="add-btn" style="margin-top: 8px; width: 100%;" @click="randomizeSaboteurs" title="Väljer en slumpad medlem som sabotör i varje lag med minst 2 medlemmar">
-          🎲 SLUMPA SABOTÖRER
+      <!-- Sidebar navigation. These panes hold exactly the sections that used
+           to sit in one endless scroll; grouping them means the game master
+           can find things during a live operation instead of hunting. -->
+      <nav class="side-tabs">
+        <button class="side-tab" :class="{ active: activeTab === 'live' }" @click="activeTab = 'live'">
+          <span class="tab-ico">📡</span>Live
         </button>
-      </div>
+        <button class="side-tab" :class="{ active: activeTab === 'teams' }" @click="activeTab = 'teams'">
+          <span class="tab-ico">👥</span>Lag
+        </button>
+        <button class="side-tab" :class="{ active: activeTab === 'route' }" @click="activeTab = 'route'">
+          <span class="tab-ico">🗺</span>Rutt
+        </button>
+        <button class="side-tab" :class="{ active: activeTab === 'joker' }" v-if="mode === 'game'" @click="activeTab = 'joker'">
+          <span class="tab-ico">🃏</span>Joker
+        </button>
+        <button class="side-tab" :class="{ active: activeTab === 'op' }" @click="activeTab = 'op'">
+          <span class="tab-ico">⚙️</span>Operation
+        </button>
+      </nav>
 
-      <!-- Sabotage: live ability log + secret text missions (game mode) -->
-      <div class="meeting-section" v-if="mode === 'game'">
-        <div class="section-title">SABOTAGE</div>
-
-        <div class="gen-hint" style="margin-bottom: 10px;">
-          Sabotörerna använder digitala förmågor från sina egna mobiler (MEDLEM-läget i appen).
-          Varje användning kostar poäng från sabotörens EGET lag och loggas här — lagen ser
-          aldrig vem som låg bakom förrän STORA AVSLÖJANDET i resultatvyn.
-        </div>
-
-        <div class="arrival-log sab-log">
-          <div v-if="sabotageLog.length === 0" class="log-empty">Inga sabotage genomförda ännu.</div>
-          <div v-for="e in recentSabotage" :key="e.id" class="arrival-entry">
-            <div class="arrival-head">
-              <span :style="{ color: TEAM_COLORS[e.byTeam] }">{{ teamDisplay(e.byTeam) }} ({{ e.byName }})</span>
-              <span>{{ formatTime(e.at) }}</span>
+      <div class="side-panel">
+      <section v-show="activeTab === 'live'" class="tab-pane">
+        <div class="sidebar-section">
+          <div v-for="team in teamSummaries" :key="team.team" class="team-card">
+            <div class="team-card-head">
+              <div class="team-card-title">{{ team.displayName }}</div>
+              <button class="kick-btn" @click="confirmKick(team)" :title="`Kicka ${team.displayName} — slotten blir ledig`">KICK</button>
             </div>
-            <div class="arrival-body">
-              {{ abilityLabel(e.type) }} → <span :style="{ color: TEAM_COLORS[e.targetTeam] }">{{ teamDisplay(e.targetTeam) }}</span>
+            <div class="team-row"><span>Uppdrag</span><span style="color: #00ccff; font-weight: bold;">{{ Math.min((teamProgress[team.team] || 0) + 1, checkpoints.filter(cp => cp.team === team.team).length) }} / {{ checkpoints.filter(cp => cp.team === team.team).length }}</span></div>
+            <div class="team-row"><span>Status</span><span :class="statusClass(team.status)">{{ team.status }}</span></div>
+            <div class="team-row"><span>Total distans</span><span>{{ team.distanceKm.toFixed(1) }} km</span></div>
+            <div class="team-row"><span>Avvikelse</span><span>{{ team.deviation.toFixed(1) }} %</span></div>
+            <div class="team-row"><span>Senaste position</span><span>{{ team.lastPosition || 'Ingen data' }}</span></div>
+            <div class="manual-override">
+              <button class="override-btn" @click="moveTeamCheckpoint(team.team, -1)">Föregående CP</button>
+              <button class="override-btn" @click="moveTeamCheckpoint(team.team, 1)">Nästa CP</button>
             </div>
-            <div class="arrival-meta">
-              −{{ e.cost || 0 }} p för {{ teamDisplay(e.byTeam) }}
-              <span v-if="isEffectActive(e.id)" class="sab-active-tag"> · PÅGÅR NU</span>
-            </div>
-          </div>
-        </div>
-
-        <!-- Optional secret text missions per saboteur -->
-        <div v-if="saboteurTeams.length" class="sab-missions-block">
-          <div class="section-title" style="font-size: 0.7rem; margin: 14px 0 8px;">HEMLIGA UPPDRAG (TEXT)</div>
-          <div v-for="key in saboteurTeams" :key="key" class="sab-team-block">
-            <div class="roster-team-name" :style="{ color: TEAM_COLORS[key] }">
-              {{ teamDisplay(key) }} — sabotör: {{ saboteurNameOf(key) }}
-            </div>
-            <div v-for="m in missionsFor(key)" :key="m.id" class="sab-mission-row" :class="{ 'is-done': m.done }">
-              <span class="sab-mission-status">{{ m.done ? '✓' : '○' }}</span>
-              <span class="sab-mission-text">
-                mot <b :style="{ color: TEAM_COLORS[m.targetTeam] }">{{ teamDisplay(m.targetTeam) }}</b>: {{ m.text }}
-                <span v-if="m.done && m.doneAt" class="sab-mission-time">({{ formatTime(m.doneAt) }})</span>
+          
+            <!-- Cheating Stats -->
+            <div class="team-row cheating-stats" v-if="teamCheating[team.team]?.offenses > 0">
+              <span>Fuskdetekteringar</span>
+              <span style="color: #ff3333; font-weight: bold;">
+                {{ teamCheating[team.team].offenses }} ({{ Math.floor(teamCheating[team.team].seconds / 60) }}m {{ teamCheating[team.team].seconds % 60 }}s)
               </span>
-              <button class="kick-btn" @click="removeMission(m.id)" title="Ta bort uppdraget">✕</button>
             </div>
-            <div class="sab-mission-add">
-              <select v-model="missionDrafts[key].targetTeam" class="checkpoint-input sab-target-select">
-                <option disabled value="">Mållag…</option>
-                <option v-for="t in missionTargetsFor(key)" :key="t.key" :value="t.key">{{ t.name }}</option>
-              </select>
-              <input
-                v-model="missionDrafts[key].text"
-                class="checkpoint-input"
-                placeholder="Uppdragstext (ofarligt partybus!)"
-                maxlength="300"
-                @keyup.enter="addMission(key)"
-              />
-              <button class="add-btn" :disabled="!missionDrafts[key].targetTeam || !missionDrafts[key].text.trim()" @click="addMission(key)">+</button>
+          
+            <!-- Debug Panel -->
+            <div v-if="isSimulationMode" class="debug-panel">
+              <div class="debug-row">
+                <label>Lat</label>
+                <input type="number" step="0.0001" v-model.number="debugPositions[team.team].lat" />
+              </div>
+              <div class="debug-row">
+                <label>Lng</label>
+                <input type="number" step="0.0001" v-model.number="debugPositions[team.team].lng" />
+              </div>
+              <button class="debug-update-btn" @click="updateTeamPosition(team.team)">Flytta Team</button>
+              <button class="debug-update-btn" @click="snapToIdeal(team.team)">Snap to ideal</button>
             </div>
           </div>
-          <button class="add-btn" style="margin-top: 8px; width: 100%;" @click="randomizeMissions" title="Lägger till 2 slumpade uppdrag ur standardpoolen per sabotör (endast ofarliga sociala bus)">
-            🎲 SLUMPA UPPDRAG
+        </div>
+
+        <div class="meeting-section">
+          <div class="section-title">POÄNGLIGA</div>
+          <div class="scoring-info">
+            <div v-if="leaderboard.length === 0" class="log-empty">Inga lag ännu.</div>
+            <div v-else class="scoreboard">
+              <div v-for="(row, idx) in leaderboard" :key="row.team" class="score-row" :style="{ '--team-color': row.color }">
+                <div class="score-rank">{{ idx + 1 }}</div>
+                <div class="score-body">
+                  <div class="score-head">
+                    <span class="score-name" :style="{ color: row.color }">{{ row.displayName }}</span>
+                    <span class="score-total">{{ row.total }} p</span>
+                  </div>
+                  <div class="score-progress">
+                    CP {{ row.completed }}/{{ row.totalCheckpoints }} · {{ row.arrivals }} ankomster · {{ row.totalMinutes }} min
+                  </div>
+                  <div class="score-breakdown">
+                    <span class="bd-pos">+{{ row.breakdown.arrival }}</span><span class="bd-label">ankomst</span>
+                    <span class="bd-pos">+{{ row.breakdown.missionComplete }}</span><span class="bd-label">uppdrag</span>
+                    <span class="bd-pos">+{{ row.breakdown.meetingBonus }}</span><span class="bd-label">återsamling</span>
+                    <span class="bd-neg">{{ row.breakdown.cheatPenalty }}</span><span class="bd-label">fusk</span>
+                    <template v-if="row.breakdown.sabotagePenalty">
+                      <span class="bd-neg">{{ row.breakdown.sabotagePenalty }}</span><span class="bd-label">sabotage</span>
+                    </template>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="scoring-legend">
+              +{{ SCORING.arrival }} ankomst · +{{ SCORING.missionComplete }} uppdrag slutfört · +{{ SCORING.meetingBonus }} gemensamt (återsamling) · −{{ SCORING.cheatOffense }} per fusk + −{{ SCORING.cheatPer30s }} / 30s<template v-if="mode === 'game'"> · sabotage kostar 10–25 p av eget lags poäng</template> · snabbast tid avgör vid lika poäng
+            </div>
+          </div>
+        </div>
+
+        <div class="meeting-section">
+          <div class="section-title">ANKOMSTLOGG</div>
+          <div class="arrival-log">
+            <div v-if="arrivalLog.length === 0" class="log-empty">Inga ankomster registrerade ännu.</div>
+            <div v-for="entry in arrivalLog.slice(0, 40)" :key="entry.id" class="arrival-entry">
+              <div class="arrival-head">
+                <span>{{ entry.teamName }}</span>
+                <span>{{ formatTime(entry.timestamp) }}</span>
+              </div>
+              <div class="arrival-body">
+                {{ entry.checkpointName }}
+                <span v-if="entry.checkpointTitle" class="arrival-title">{{ entry.checkpointTitle }}</span>
+              </div>
+              <div class="arrival-meta">
+                {{ entry.checkpointType.toUpperCase() }}
+                <span v-if="entry.distanceMeters != null"> · {{ entry.distanceMeters }} m från centrum</span>
+              </div>
+              <a v-if="photoUrl(entry)" :href="photoUrl(entry)" target="_blank" class="arrival-photo-link">
+                <img :src="photoUrl(entry)" class="arrival-photo" alt="lag-bild" loading="lazy" />
+              </a>
+            </div>
+          </div>
+        </div>
+
+
+        <div class="meeting-section">
+          <div class="section-title">TEAM-CHATT</div>
+          <div class="chat-box">
+            <div class="chat-log">
+              <div v-if="chatMessages.length === 0" class="log-empty">Inga meddelanden ännu.</div>
+              <div v-for="msg in chatMessages.slice(-30)" :key="msg.id" class="chat-message" :class="{ 'is-admin': msg.role === 'admin' }">
+                <div class="chat-meta">
+                  <span>{{ msg.senderName }}</span>
+                  <span>{{ formatTime(msg.timestamp) }}</span>
+                </div>
+                <div class="chat-text">{{ msg.text }}</div>
+              </div>
+            </div>
+            <form class="chat-form" @submit.prevent="sendAdminChat">
+              <input v-model="adminChatDraft" class="checkpoint-input chat-input" maxlength="500" placeholder="Meddelande till alla team" />
+              <button class="add-btn chat-send" type="submit" :disabled="!adminChatDraft.trim()">Skicka</button>
+            </form>
+          </div>
+        </div>
+
+      </section>
+
+      <section v-show="activeTab === 'teams'" class="tab-pane">
+        <!-- Team rosters (who rides in which car) -->
+        <div class="meeting-section" v-if="rosterTeams.length">
+          <div class="section-title">LAGINDELNING</div>
+          <div v-for="key in rosterTeams" :key="key" class="roster-team">
+            <div class="roster-team-name" :style="{ color: TEAM_COLORS[key] }">{{ teams[key]?.name || key.toUpperCase() }}</div>
+            <div class="roster-members">
+              <span v-for="(person, i) in teamRosters[key]" :key="i" class="roster-member" :class="{ 'is-driver': person.driver }">
+                {{ person.name }}<span v-if="person.driver" title="Har körkort — förare"> 🚗</span><span v-if="person.role === 'sabotor'" title="Lagets hemliga sabotör"> 🕶️</span>
+              </span>
+            </div>
+            <div v-if="mode === 'game'" class="roster-sab-row">
+              <label class="roster-sab-label">Sabotör:</label>
+              <select
+                class="checkpoint-input roster-sab-select"
+                :value="saboteurNameOf(key)"
+                @change="setSaboteur(key, $event.target.value)"
+              >
+                <option value="">— ingen —</option>
+                <option
+                  v-for="p in teamRosters[key]"
+                  :key="p.name"
+                  :value="p.name"
+                  :disabled="p.name === soleDriverOf(teamRosters[key])"
+                >{{ p.name }}{{ p.name === soleDriverOf(teamRosters[key]) ? ' (enda föraren)' : '' }}</option>
+              </select>
+            </div>
+          </div>
+          <button v-if="mode === 'game'" class="add-btn" style="margin-top: 8px; width: 100%;" @click="randomizeSaboteurs" title="Väljer en slumpad medlem som sabotör i varje lag med minst 2 medlemmar">
+            🎲 SLUMPA JOKRAR
           </button>
         </div>
-        <div v-else class="gen-hint">
-          Utse sabotörer i LAGINDELNING ovan för att kunna lägga hemliga text-uppdrag.
+
+
+      </section>
+
+      <section v-show="activeTab === 'route'" class="tab-pane">
+        <!-- Route Generation -->
+        <div class="meeting-section">
+          <div class="section-title">RUTT-GENERATOR</div>
+          <div class="meeting-info">
+            <p style="color: #888; font-size: 0.75rem; margin-bottom: 10px;">Skapar separata vägar för alla team från start till mål med en central återsamlingsplats.</p>
+
+            <div v-if="genProgress" class="gen-progress-box">
+              <div class="spinner-small"></div>
+              <span>{{ genProgress }}</span>
+            </div>
+
+            <div v-else>
+              <div style="margin-bottom: 12px; display: flex; align-items: center; gap: 10px;">
+                <input type="checkbox" id="avoid-highways" v-model="avoidHighways" style="accent-color: #ffcc00;" />
+                <label for="avoid-highways" style="font-size: 0.8rem; cursor: pointer; color: #ccc;">Undvik motorvägar</label>
+              </div>
+
+              <div class="gen-grid">
+                <label class="gen-label">Antal lag
+                  <input v-model.number="genTeamCount" class="checkpoint-input" type="number" :min="1" :max="MAX_TEAMS" />
+                </label>
+              </div>
+              <div class="gen-hint">
+                Antal CPs sätts automatiskt (max 30 min mellan CPs) och ~1/3 blir gemensamma.<br />
+                Max längd: idealrutt start → mål + 15 %.
+                <span v-if="operationStartTime || meetingPointTime"><br />Tider stämplas på CPs utifrån starttid<span v-if="meetingPointTime"> + mötestid</span>.</span>
+              </div>
+
+              <div class="slot-name-list">
+                <div class="slot-name-row" v-for="(spec, i) in genSlotSpecs" :key="i">
+                  <span class="slot-swatch" :style="{ background: slotColors[i] }"></span>
+                  <span class="slot-index">#{{ i + 1 }}</span>
+                  <input v-model="spec.name" class="checkpoint-input slot-name-input" :placeholder="`TEAM ${i + 1}`" />
+                </div>
+              </div>
+
+              <button class="add-btn" style="background: #ffcc00; margin-top: 12px; width: 100%;" @click="handleGenerateRoutes">Generera Rutter</button>
+            </div>
+          </div>
         </div>
-      </div>
 
-      <!-- Route Generation -->
-      <div class="meeting-section">
-        <div class="section-title">RUTT-GENERATOR</div>
-        <div class="meeting-info">
-          <p style="color: #888; font-size: 0.75rem; margin-bottom: 10px;">Skapar separata vägar för alla team från start till mål med en central återsamlingsplats.</p>
-          <div v-if="walkingMode" class="walking-hint">
-            GÅNG-MODE: autogen använder gångprofil och 5 km/h. Mellan-CPs väljs fortfarande via geokodning — kontrollera och justera platserna manuellt efteråt, autogen kan välja platser utan gångbar väg.
+        <!-- Checkpoint Section -->
+        <div class="checkpoint-section">
+          <div class="section-title-row">
+            <div class="section-title">CHECKPOINTS</div>
+            <div class="cp-actions">
+              <button
+                class="export-cp-btn"
+                :class="{ 'is-active': importOpen }"
+                :disabled="checkpoints.length === 0"
+                @click="toggleImport"
+                title="Klistra in namn, beskrivningar, koordinater (lat, lng) och radie (per lag, numrerade) för att uppdatera checkpoints"
+              >
+                IMPORTERA
+              </button>
+              <button
+                class="export-cp-btn"
+                :disabled="checkpoints.length === 0"
+                @click="exportCheckpoints"
+                title="Kopiera lista (namn, koordinater, radie) för att generera uppdrag"
+              >
+                {{ exportCopied ? '✓ KOPIERAD' : 'EXPORTERA' }}
+              </button>
+            </div>
           </div>
-          
-          <div v-if="genProgress" class="gen-progress-box">
-            <div class="spinner-small"></div>
-            <span>{{ genProgress }}</span>
+          <div v-if="importOpen" class="cp-import-panel">
+            <textarea
+              v-model="importText"
+              class="cp-import-textarea"
+              rows="8"
+              placeholder="=== ALPHA ===&#10;1. Kalmar Slott | 56.66459, 16.35528 | radie 500 m | Lös gåtan vid porten...&#10;2. Hamnen | Hitta den röda bojen...&#10;56.67012, 16.36244"
+            ></textarea>
+            <div class="cp-import-row">
+              <button class="export-cp-btn" :disabled="!importText.trim()" @click="applyCheckpointImport">TILLÄMPA</button>
+              <span v-if="importMsg" class="cp-import-msg">{{ importMsg }}</span>
+            </div>
           </div>
-
-          <div v-else>
-            <div style="margin-bottom: 12px; display: flex; align-items: center; gap: 10px;">
-              <input type="checkbox" id="avoid-highways" v-model="avoidHighways" style="accent-color: #ffcc00;" />
-              <label for="avoid-highways" style="font-size: 0.8rem; cursor: pointer; color: #ccc;">Undvik motorvägar</label>
-            </div>
-
-            <div class="gen-grid">
-              <label class="gen-label">Antal lag
-                <input v-model.number="genTeamCount" class="checkpoint-input" type="number" :min="1" :max="MAX_TEAMS" />
-              </label>
-            </div>
-            <div class="gen-hint">
-              Antal CPs sätts automatiskt (max 30 min mellan CPs) och ~1/3 blir gemensamma.<br />
-              Max längd: idealrutt start → mål + 15 %.
-              <span v-if="operationStartTime || meetingPointTime"><br />Tider stämplas på CPs utifrån starttid<span v-if="meetingPointTime"> + mötestid</span>.</span>
-            </div>
-
-            <div class="slot-name-list">
-              <div class="slot-name-row" v-for="(spec, i) in genSlotSpecs" :key="i">
-                <span class="slot-swatch" :style="{ background: slotColors[i] }"></span>
-                <span class="slot-index">#{{ i + 1 }}</span>
-                <input v-model="spec.name" class="checkpoint-input slot-name-input" :placeholder="`TEAM ${i + 1}`" />
+          <div class="checkpoint-list">
+            <div v-if="checkpointsByTeam.length === 0" class="checkpoint-empty">Inga checkpoints ännu.</div>
+            <div v-for="group in checkpointsByTeam" :key="group.team" class="team-group" :style="{ '--team-color': group.meta.color }">
+              <div class="team-header">
+                <span class="team-swatch" :style="{ background: group.meta.color }"></span>
+                <span class="team-label">{{ group.meta.label }}</span>
+                <span class="team-count">{{ group.items.length }} st</span>
+              </div>
+              <div v-for="(cp, idx) in group.items" :key="cp.id" class="checkpoint-item" :class="['is-' + cp.type, { 'is-editing': editingId === cp.id }]">
+                <div class="cp-index">{{ idx + 1 }}</div>
+                <div class="cp-body">
+                  <template v-if="editingId === cp.id">
+                    <div v-if="cp.city" class="cp-edit-city-row">
+                      <span class="cp-edit-city-label">Stad:</span>
+                      <span class="cp-edit-city-value">{{ cp.city }}</span>
+                    </div>
+                    <input
+                      v-model="editDraft.name"
+                      class="checkpoint-input cp-edit-input"
+                      placeholder="Uppdragsnamn"
+                      @keyup.enter="saveCheckpointEdit"
+                      @keyup.esc="cancelCheckpointEdit"
+                    />
+                    <textarea
+                      v-model="editDraft.challenge"
+                      class="checkpoint-input cp-edit-textarea"
+                      rows="3"
+                      placeholder="Uppdrag / Task"
+                      @keyup.esc="cancelCheckpointEdit"
+                    ></textarea>
+                    <div v-if="idx < group.items.length - 1" class="cp-edit-time-row">
+                      <label>Tid till nästa (min):</label>
+                      <input
+                        v-model.number="editDraft.timeToNext"
+                        type="number"
+                        min="0"
+                        step="1"
+                        class="checkpoint-input cp-edit-time-input"
+                        placeholder="0"
+                      />
+                    </div>
+                    <div class="cp-edit-actions">
+                      <button class="add-btn cp-save-btn" @click="saveCheckpointEdit">Spara</button>
+                      <button class="cp-cancel-btn" @click="cancelCheckpointEdit">Avbryt</button>
+                    </div>
+                  </template>
+                  <template v-else>
+                    <div class="cp-name">
+                      <span v-if="cp.type === 'meeting'" class="cp-badge badge-meeting">ÅTERSAMLING</span>
+                      <span v-else-if="cp.type === 'start'" class="cp-badge badge-start">START</span>
+                      <span v-else-if="cp.type === 'finish'" class="cp-badge badge-finish">MÅL</span>
+                      <span v-if="cp.shared" class="cp-badge badge-shared">GEMENSAMT</span>
+                      {{ cp.name || cp.title }}
+                      <span v-if="cp.city" class="cp-city">📍 {{ cp.city }}</span>
+                      <span v-if="cp.region" class="cp-region">{{ cp.region }}</span>
+                      <span v-if="cp.arriveAt" class="cp-arrive">🕒 {{ formatClock(cp.arriveAt) }}</span>
+                    </div>
+                    <div class="cp-challenge" v-if="cp.challenge">{{ cp.challenge }}</div>
+                    <div class="cp-time" v-if="idx < group.items.length - 1" :class="{ 'time-unset': cp.timeToNext === 0 }">
+                      <span class="time-label">↓</span>
+                      <span class="time-value">{{ cp.timeToNext }} min</span>
+                    </div>
+                    <div class="cp-pos">{{ cp.lat.toFixed(4) }}, {{ cp.lng.toFixed(4) }}</div>
+                  </template>
+                </div>
+                <div class="cp-actions" v-if="editingId !== cp.id">
+                  <button class="cp-edit-btn" @click="startCheckpointEdit(cp)" title="Redigera uppdrag">✎</button>
+                  <button class="delete-btn" @click="removeCheckpoint(cp.id)" title="Ta bort">X</button>
+                </div>
               </div>
             </div>
+          </div>
+        </div>
 
-            <button class="add-btn" style="background: #ffcc00; margin-top: 12px; width: 100%;" @click="handleGenerateRoutes">Generera Rutter</button>
-          </div>
-        </div>
-      </div>
 
-      <!-- Checkpoint Section -->
-      <div class="checkpoint-section">
-        <div class="section-title-row">
-          <div class="section-title">CHECKPOINTS</div>
-          <div class="cp-actions">
-            <button
-              class="export-cp-btn"
-              :class="{ 'is-active': importOpen }"
-              :disabled="checkpoints.length === 0"
-              @click="toggleImport"
-              title="Klistra in namn, beskrivningar, koordinater (lat, lng) och radie (per lag, numrerade) för att uppdatera checkpoints"
-            >
-              IMPORTERA
-            </button>
-            <button
-              class="export-cp-btn"
-              :disabled="checkpoints.length === 0"
-              @click="exportCheckpoints"
-              title="Kopiera lista (namn, koordinater, radie) för att generera uppdrag"
-            >
-              {{ exportCopied ? '✓ KOPIERAD' : 'EXPORTERA' }}
-            </button>
-          </div>
-        </div>
-        <div v-if="importOpen" class="cp-import-panel">
-          <textarea
-            v-model="importText"
-            class="cp-import-textarea"
-            rows="8"
-            placeholder="=== ALPHA ===&#10;1. Kalmar Slott | 56.66459, 16.35528 | radie 500 m | Lös gåtan vid porten...&#10;2. Hamnen | Hitta den röda bojen...&#10;56.67012, 16.36244"
-          ></textarea>
-          <div class="cp-import-row">
-            <button class="export-cp-btn" :disabled="!importText.trim()" @click="applyCheckpointImport">TILLÄMPA</button>
-            <span v-if="importMsg" class="cp-import-msg">{{ importMsg }}</span>
-          </div>
-        </div>
-        <div class="checkpoint-list">
-          <div v-if="checkpointsByTeam.length === 0" class="checkpoint-empty">Inga checkpoints ännu.</div>
-          <div v-for="group in checkpointsByTeam" :key="group.team" class="team-group" :style="{ '--team-color': group.meta.color }">
-            <div class="team-header">
-              <span class="team-swatch" :style="{ background: group.meta.color }"></span>
-              <span class="team-label">{{ group.meta.label }}</span>
-              <span class="team-count">{{ group.items.length }} st</span>
+        <!-- Start Section -->
+        <div class="meeting-section">
+          <div class="section-title">STARTPUNKT</div>
+          <div class="meeting-info">
+            <div v-if="globalStart.lat" class="point-row">
+              <span class="point-name">
+                {{ globalStart.name }}
+                <span v-if="globalStart.region" class="cp-region">{{ globalStart.region }}</span>
+              </span>
+              <span class="point-coords">{{ globalStart.lat.toFixed(4) }}, {{ globalStart.lng.toFixed(4) }}</span>
             </div>
-            <div v-for="(cp, idx) in group.items" :key="cp.id" class="checkpoint-item" :class="['is-' + cp.type, { 'is-editing': editingId === cp.id }]">
-              <div class="cp-index">{{ idx + 1 }}</div>
-              <div class="cp-body">
-                <template v-if="editingId === cp.id">
-                  <div v-if="cp.city" class="cp-edit-city-row">
-                    <span class="cp-edit-city-label">Stad:</span>
-                    <span class="cp-edit-city-value">{{ cp.city }}</span>
-                  </div>
-                  <input
-                    v-model="editDraft.name"
-                    class="checkpoint-input cp-edit-input"
-                    placeholder="Uppdragsnamn"
-                    @keyup.enter="saveCheckpointEdit"
-                    @keyup.esc="cancelCheckpointEdit"
-                  />
-                  <textarea
-                    v-model="editDraft.challenge"
-                    class="checkpoint-input cp-edit-textarea"
-                    rows="3"
-                    placeholder="Uppdrag / Task"
-                    @keyup.esc="cancelCheckpointEdit"
-                  ></textarea>
-                  <div v-if="idx < group.items.length - 1" class="cp-edit-time-row">
-                    <label>Tid till nästa (min):</label>
-                    <input
-                      v-model.number="editDraft.timeToNext"
-                      type="number"
-                      min="0"
-                      step="1"
-                      class="checkpoint-input cp-edit-time-input"
-                      placeholder="0"
-                    />
-                  </div>
-                  <div class="cp-edit-actions">
-                    <button class="add-btn cp-save-btn" @click="saveCheckpointEdit">Spara</button>
-                    <button class="cp-cancel-btn" @click="cancelCheckpointEdit">Avbryt</button>
-                  </div>
+            <div v-else class="status-warn">Inte satt</div>
+            <div class="search-row">
+              <input
+                v-model="startQuery"
+                class="checkpoint-input"
+                placeholder="Stad / ort"
+                :disabled="startSearching"
+                @keyup.enter="handleStartSearch"
+              />
+              <button class="add-btn" :disabled="startSearching || !startQuery.trim()" @click="handleStartSearch">
+                {{ startSearching ? '…' : 'Sök' }}
+              </button>
+            </div>
+            <div v-if="startError" class="status-warn">{{ startError }}</div>
+            <div class="time-row">
+              <label class="time-label">Starttid</label>
+              <input
+                type="datetime-local"
+                class="checkpoint-input time-input"
+                :value="startTimeInput"
+                @change="onStartTimeChange"
+              />
+              <button v-if="operationStartTime" class="time-clear" @click="operationStartTime = null" title="Rensa">×</button>
+            </div>
+          </div>
+        </div>
+
+
+        <!-- Meeting Section (auto-set by route generation) -->
+        <div class="meeting-section">
+          <div class="section-title">ÅTERSAMLING</div>
+          <div class="meeting-info">
+            <div v-if="meetingPoint.lat" class="point-row">
+              <span class="point-name">
+                {{ meetingPoint.name }}
+                <span v-if="meetingPoint.region" class="cp-region">{{ meetingPoint.region }}</span>
+              </span>
+              <span class="point-coords">{{ meetingPoint.lat.toFixed(4) }}, {{ meetingPoint.lng.toFixed(4) }}</span>
+            </div>
+            <div v-else class="status-warn">Sätts automatiskt när rutter genereras.</div>
+            <div class="time-row">
+              <label class="time-label">Mötestid</label>
+              <input
+                type="datetime-local"
+                class="checkpoint-input time-input"
+                :value="meetingTimeInput"
+                @change="onMeetingTimeChange"
+              />
+              <button v-if="meetingPointTime" class="time-clear" @click="meetingPointTime = null" title="Rensa">×</button>
+            </div>
+          </div>
+        </div>
+
+
+        <!-- Finish Section -->
+        <div class="meeting-section">
+          <div class="section-title">MÅLLINJE</div>
+          <div class="meeting-info">
+            <div v-if="globalFinish.lat" class="point-row">
+              <span class="point-name">
+                {{ globalFinish.name }}
+                <span v-if="globalFinish.region" class="cp-region">{{ globalFinish.region }}</span>
+              </span>
+              <span class="point-coords">{{ globalFinish.lat.toFixed(4) }}, {{ globalFinish.lng.toFixed(4) }}</span>
+            </div>
+            <div v-else class="status-warn">Inte satt</div>
+            <div class="search-row">
+              <input
+                v-model="finishQuery"
+                class="checkpoint-input"
+                placeholder="Stad / ort"
+                :disabled="finishSearching"
+                @keyup.enter="handleFinishSearch"
+              />
+              <button class="add-btn" :disabled="finishSearching || !finishQuery.trim()" @click="handleFinishSearch">
+                {{ finishSearching ? '…' : 'Sök' }}
+              </button>
+            </div>
+            <div v-if="finishError" class="status-warn">{{ finishError }}</div>
+          </div>
+        </div>
+
+      </section>
+
+      <section v-show="activeTab === 'joker'" class="tab-pane">
+        <!-- Sabotage: live ability log + secret text missions (game mode) -->
+        <div class="meeting-section" v-if="mode === 'game'">
+          <div class="section-title">JOKER</div>
+
+          <div class="gen-hint" style="margin-bottom: 10px;">
+            Jokrarna använder sina förmågor från sina egna mobiler (MEDLEM-läget i appen). De kan
+            <b>stötta sitt eget lag</b> eller <b>störa ett annat</b> — båda riktningarna delar
+            laddningar, nedkylning och poängkostnad, så varje användning är ett vägval. Kostnaden
+            dras alltid från jokerns EGET lag. Mållagen får aldrig veta vem som låg bakom förrän
+            STORA AVSLÖJANDET i resultatvyn.
+          </div>
+
+          <div class="joker-legend">
+            <span><i class="lg-dot lg-help"></i> Stöttar eget lag</span>
+            <span><i class="lg-dot lg-harm"></i> Stör annat lag</span>
+          </div>
+
+          <div class="arrival-log sab-log">
+            <div v-if="sabotageLog.length === 0" class="log-empty">Inga jokerförmågor använda ännu.</div>
+            <div
+              v-for="e in recentSabotage"
+              :key="e.id"
+              class="arrival-entry"
+              :class="isSelfDirected(e) ? 'is-help' : 'is-harm'"
+            >
+              <div class="arrival-head">
+                <span :style="{ color: TEAM_COLORS[e.byTeam] }">{{ teamDisplay(e.byTeam) }} ({{ e.byName }})</span>
+                <span>{{ formatTime(e.at) }}</span>
+              </div>
+              <div class="arrival-body">
+                {{ abilityLabel(e.type) }}
+                <template v-if="isSelfDirected(e)">
+                  → <span :style="{ color: TEAM_COLORS[e.byTeam] }">eget lag</span>
                 </template>
                 <template v-else>
-                  <div class="cp-name">
-                    <span v-if="cp.type === 'meeting'" class="cp-badge badge-meeting">ÅTERSAMLING</span>
-                    <span v-else-if="cp.type === 'start'" class="cp-badge badge-start">START</span>
-                    <span v-else-if="cp.type === 'finish'" class="cp-badge badge-finish">MÅL</span>
-                    <span v-if="cp.shared" class="cp-badge badge-shared">GEMENSAMT</span>
-                    {{ cp.name || cp.title }}
-                    <span v-if="cp.city" class="cp-city">📍 {{ cp.city }}</span>
-                    <span v-if="cp.region" class="cp-region">{{ cp.region }}</span>
-                    <span v-if="cp.arriveAt" class="cp-arrive">🕒 {{ formatClock(cp.arriveAt) }}</span>
-                  </div>
-                  <div class="cp-challenge" v-if="cp.challenge">{{ cp.challenge }}</div>
-                  <div class="cp-time" v-if="idx < group.items.length - 1" :class="{ 'time-unset': cp.timeToNext === 0 }">
-                    <span class="time-label">↓</span>
-                    <span class="time-value">{{ cp.timeToNext }} min</span>
-                  </div>
-                  <div class="cp-pos">{{ cp.lat.toFixed(4) }}, {{ cp.lng.toFixed(4) }}</div>
+                  → <span :style="{ color: TEAM_COLORS[e.targetTeam] }">{{ teamDisplay(e.targetTeam) }}</span>
                 </template>
               </div>
-              <div class="cp-actions" v-if="editingId !== cp.id">
-                <button class="cp-edit-btn" @click="startCheckpointEdit(cp)" title="Redigera uppdrag">✎</button>
-                <button class="delete-btn" @click="removeCheckpoint(cp.id)" title="Ta bort">X</button>
+              <div class="arrival-meta">
+                −{{ e.cost || 0 }} p för {{ teamDisplay(e.byTeam) }}
+                <span v-if="isEffectActive(e.id)" class="sab-active-tag"> · PÅGÅR NU</span>
               </div>
             </div>
           </div>
-        </div>
-      </div>
 
-      <!-- Start Section -->
-      <div class="meeting-section">
-        <div class="section-title">STARTPUNKT</div>
-        <div class="meeting-info">
-          <div v-if="globalStart.lat" class="point-row">
-            <span class="point-name">
-              {{ globalStart.name }}
-              <span v-if="globalStart.region" class="cp-region">{{ globalStart.region }}</span>
-            </span>
-            <span class="point-coords">{{ globalStart.lat.toFixed(4) }}, {{ globalStart.lng.toFixed(4) }}</span>
-          </div>
-          <div v-else class="status-warn">Inte satt</div>
-          <div class="search-row">
-            <input
-              v-model="startQuery"
-              class="checkpoint-input"
-              placeholder="Stad / ort"
-              :disabled="startSearching"
-              @keyup.enter="handleStartSearch"
-            />
-            <button class="add-btn" :disabled="startSearching || !startQuery.trim()" @click="handleStartSearch">
-              {{ startSearching ? '…' : 'Sök' }}
+          <!-- Optional secret text missions per saboteur -->
+          <div v-if="saboteurTeams.length" class="sab-missions-block">
+            <div class="section-title" style="font-size: 0.7rem; margin: 14px 0 8px;">HEMLIGA UPPDRAG (TEXT)</div>
+            <div v-for="key in saboteurTeams" :key="key" class="sab-team-block">
+              <div class="roster-team-name" :style="{ color: TEAM_COLORS[key] }">
+                {{ teamDisplay(key) }} — sabotör: {{ saboteurNameOf(key) }}
+              </div>
+              <div v-for="m in missionsFor(key)" :key="m.id" class="sab-mission-row" :class="{ 'is-done': m.done }">
+                <span class="sab-mission-status">{{ m.done ? '✓' : '○' }}</span>
+                <span class="sab-mission-text">
+                  mot <b :style="{ color: TEAM_COLORS[m.targetTeam] }">{{ teamDisplay(m.targetTeam) }}</b>: {{ m.text }}
+                  <span v-if="m.done && m.doneAt" class="sab-mission-time">({{ formatTime(m.doneAt) }})</span>
+                </span>
+                <button class="kick-btn" @click="removeMission(m.id)" title="Ta bort uppdraget">✕</button>
+              </div>
+              <div class="sab-mission-add">
+                <select v-model="missionDrafts[key].targetTeam" class="checkpoint-input sab-target-select">
+                  <option disabled value="">Mållag…</option>
+                  <option v-for="t in missionTargetsFor(key)" :key="t.key" :value="t.key">{{ t.name }}</option>
+                </select>
+                <input
+                  v-model="missionDrafts[key].text"
+                  class="checkpoint-input"
+                  placeholder="Uppdragstext (ofarligt partybus!)"
+                  maxlength="300"
+                  @keyup.enter="addMission(key)"
+                />
+                <button class="add-btn" :disabled="!missionDrafts[key].targetTeam || !missionDrafts[key].text.trim()" @click="addMission(key)">+</button>
+              </div>
+            </div>
+            <button class="add-btn" style="margin-top: 8px; width: 100%;" @click="randomizeMissions" title="Lägger till 2 slumpade uppdrag ur standardpoolen per sabotör (endast ofarliga sociala bus)">
+              🎲 SLUMPA UPPDRAG
             </button>
           </div>
-          <div v-if="startError" class="status-warn">{{ startError }}</div>
-          <div class="time-row">
-            <label class="time-label">Starttid</label>
-            <input
-              type="datetime-local"
-              class="checkpoint-input time-input"
-              :value="startTimeInput"
-              @change="onStartTimeChange"
-            />
-            <button v-if="operationStartTime" class="time-clear" @click="operationStartTime = null" title="Rensa">×</button>
+          <div v-else class="gen-hint">
+            Utse sabotörer i LAGINDELNING ovan för att kunna lägga hemliga text-uppdrag.
           </div>
         </div>
-      </div>
 
-      <!-- Meeting Section (auto-set by route generation) -->
-      <div class="meeting-section">
-        <div class="section-title">ÅTERSAMLING</div>
-        <div class="meeting-info">
-          <div v-if="meetingPoint.lat" class="point-row">
-            <span class="point-name">
-              {{ meetingPoint.name }}
-              <span v-if="meetingPoint.region" class="cp-region">{{ meetingPoint.region }}</span>
-            </span>
-            <span class="point-coords">{{ meetingPoint.lat.toFixed(4) }}, {{ meetingPoint.lng.toFixed(4) }}</span>
-          </div>
-          <div v-else class="status-warn">Sätts automatiskt när rutter genereras.</div>
-          <div class="time-row">
-            <label class="time-label">Mötestid</label>
-            <input
-              type="datetime-local"
-              class="checkpoint-input time-input"
-              :value="meetingTimeInput"
-              @change="onMeetingTimeChange"
-            />
-            <button v-if="meetingPointTime" class="time-clear" @click="meetingPointTime = null" title="Rensa">×</button>
-          </div>
-        </div>
-      </div>
 
-      <!-- Finish Section -->
-      <div class="meeting-section">
-        <div class="section-title">MÅLLINJE</div>
-        <div class="meeting-info">
-          <div v-if="globalFinish.lat" class="point-row">
-            <span class="point-name">
-              {{ globalFinish.name }}
-              <span v-if="globalFinish.region" class="cp-region">{{ globalFinish.region }}</span>
-            </span>
-            <span class="point-coords">{{ globalFinish.lat.toFixed(4) }}, {{ globalFinish.lng.toFixed(4) }}</span>
+      </section>
+
+      <section v-show="activeTab === 'op'" class="tab-pane">
+        <!-- Play mode for THIS operation: game (full competition) or explore
+             (relaxed sightseeing). Editable while planning; broadcast live. -->
+        <div class="meeting-section">
+          <div class="section-title">SPELLÄGE</div>
+          <div class="mode-toggle-row">
+            <button
+              class="mode-pick-btn"
+              :class="{ active: mode === 'game' }"
+              @click="setOperationMode('game')"
+              title="Fullt spel: fototvång vid checkpoints, fuskdetektering med rödlås/strafftid, hemliga roller och sabotage."
+            >🎖 SPEL</button>
+            <button
+              class="mode-pick-btn is-explore"
+              :class="{ active: mode === 'explore' }"
+              @click="setOperationMode('explore')"
+              title="Avslappnad upptäcktsfärd: inga straff eller fototvång, lagets egen position syns på kartan, stoppen är infokort."
+            >🌿 UTFORSKNING</button>
           </div>
-          <div v-else class="status-warn">Inte satt</div>
-          <div class="search-row">
-            <input
-              v-model="finishQuery"
-              class="checkpoint-input"
-              placeholder="Stad / ort"
-              :disabled="finishSearching"
-              @keyup.enter="handleFinishSearch"
-            />
-            <button class="add-btn" :disabled="finishSearching || !finishQuery.trim()" @click="handleFinishSearch">
-              {{ finishSearching ? '…' : 'Sök' }}
-            </button>
-          </div>
-          <div v-if="finishError" class="status-warn">{{ finishError }}</div>
+          <p class="gen-hint" style="margin-top: 8px;">
+            <b>SPEL</b> = som vanligt: bildbevis, fuskdetektering (rödlås + strafftid) och hemliga
+            roller med sabotage. <b>UTFORSKNING</b> = samma rutt och kompass, men inga krav:
+            foton är frivilliga minnesbilder, inget fusksystem, egen position syns på kartan
+            och checkpoints är bara "här finns något coolt"-stopp. Gäller denna operation och
+            slår igenom direkt hos anslutna spelare.
+          </p>
         </div>
+
+        <!-- <div v-if="isLoading" class="sidebar-loading">Laddar data...</div> -->
+
+        <!-- Operations catalog -->
+        <div class="meeting-section">
+          <div class="section-title">OPERATIONER</div>
+          <div class="op-list">
+            <div v-for="op in operationsList" :key="op.id" class="op-row" :class="{ 'is-live': op.id === activeOperationId }">
+              <span class="op-name">{{ op.name }}</span>
+              <span v-if="op.joinCode" class="op-code" :title="'Anslutningskod: ' + op.joinCode">{{ op.joinCode }}</span>
+              <span v-if="op.id === activeOperationId" class="op-live-tag">LIVE</span>
+              <div class="op-row-actions">
+                <button v-if="op.id !== activeOperationId" class="header-btn" @click="switchOperation(op.id)" title="Gör denna operation live">AKTIVERA</button>
+                <button class="header-btn" @click="renameOperationPrompt(op)" title="Byt namn">✎</button>
+                <button v-if="op.id !== activeOperationId" class="header-btn danger" @click="deleteOperationConfirm(op)" title="Ta bort permanent">✕</button>
+              </div>
+            </div>
+          </div>
+          <button class="add-btn" style="margin-top: 10px; width: 100%;" @click="openCreateOperation">+ Ny operation</button>
+        </div>
+
+
+      </section>
+
       </div>
     </aside>
 
@@ -696,6 +757,7 @@ import { ref, reactive, computed, onMounted, watch } from 'vue'
 import AdminMap from '../components/AdminMap.vue'
 import { useAdminTracking } from '../composables/useAdminTracking'
 import { restartSync } from '../store/simulationStore'
+import { currentTheme, toggleTheme } from '../lib/theme'
 import { authMe, authLogin, authRegister, authLogout, setAdminToken, api } from '../lib/syncClient'
 import { SLOT_DEFS, SLOT_KEYS, MAX_TEAMS } from '../lib/teamSlots'
 import { computeLeaderboard, SCORING } from '../lib/scoring'
@@ -730,8 +792,6 @@ const {
   avoidHighways,
   isSimulationMode,
   isOperationActive,
-  walkingMode,
-  toggleWalkingMode,
   operationStartTime,
   meetingPointTime,
   toggleOperation,
@@ -821,6 +881,12 @@ const teamDisplay = (key) => teams.value[key]?.name || (key || '').toUpperCase()
 const abilityLabel = (type) => ABILITY_LABELS[type] || type
 
 const recentSabotage = computed(() => [...sabotageLog.value].slice(-25).reverse())
+
+// Did this entry support the joker's own team, or hit another one? Entries
+// written before `direction` existed are classified by ability type.
+const SELF_ABILITY_TYPES = new Set(['counter-measure', 'recon', 'self-locate'])
+const isSelfDirected = (e) =>
+  e?.direction === 'self' || SELF_ABILITY_TYPES.has(e?.type) || e?.targetTeam === e?.byTeam
 
 function isEffectActive(id) {
   const fx = (sabotageEffects.value || []).find(e => e && e.id === id)
@@ -1004,6 +1070,35 @@ async function regenerateCode() {
 
 const ready = ref(false)
 const sidebarOpen = ref(true)
+
+// Sidebar tab: 'live' | 'teams' | 'route' | 'joker' | 'op'. Remembered per
+// browser so reopening the panel mid-operation lands where you left off.
+const activeTab = ref('live')
+try {
+  const saved = localStorage.getItem('oo-admin-tab')
+  if (saved) activeTab.value = saved
+} catch (_) { /* private mode */ }
+watch(activeTab, (t) => {
+  try { localStorage.setItem('oo-admin-tab', t) } catch (_) { /* ignore */ }
+})
+
+// The Joker tab only exists in game mode — fall back so the panel is never blank.
+watch(mode, (m) => {
+  if (m !== 'game' && activeTab.value === 'joker') activeTab.value = 'live'
+})
+
+// Colour scheme. The admin panel defaults to light (long desk sessions) but the
+// choice is stored globally, so it carries over to the landing page too.
+const adminDark = ref(currentTheme() === 'dark')
+function toggleAdminTheme() {
+  adminDark.value = toggleTheme() === 'dark'
+}
+
+const authInitials = computed(() => {
+  const name = (authUser.value || '').trim()
+  if (!name) return '?'
+  return name.slice(0, 2).toUpperCase()
+})
 const genCheckpointCount = ref(3)
 const genSharedTaskCount = ref(0)
 const genTeamCount = ref(3)
@@ -1540,9 +1635,9 @@ const toggleSharedSimulation = () => {
 .admin-shell {
   position: fixed;
   inset: 0;
-  background: #0a0a0a;
-  color: #eee;
-  font-family: 'Inter', sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font);
   overflow: hidden;
 }
 
@@ -1554,18 +1649,20 @@ const toggleSharedSimulation = () => {
 
 .admin-header {
   position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
+  top: 12px;
+  left: 12px;
+  right: 12px;
   z-index: 1500;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 10px 16px;
-  background: linear-gradient(180deg, rgba(0,0,0,0.92) 0%, rgba(0,0,0,0.55) 100%);
-  backdrop-filter: blur(8px);
-  border-bottom: 1px solid rgba(0, 204, 255, 0.15);
+  padding: 10px 12px;
+  border-radius: var(--r-lg);
+  background: color-mix(in srgb, var(--surface) 88%, transparent);
+  backdrop-filter: blur(14px);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-md);
 }
 
 .admin-header-left {
@@ -1580,35 +1677,62 @@ const toggleSharedSimulation = () => {
   gap: 8px;
 }
 
-.admin-title {
-  font-weight: 800;
-  letter-spacing: 0.2em;
-  color: #00ccff;
-  text-shadow: 0 0 12px rgba(0, 204, 255, 0.3);
+.admin-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding-right: 4px;
+}
+.brand-logo {
+  width: 34px;
+  height: 34px;
+  border-radius: 11px;
+  display: grid;
+  place-items: center;
+  font-size: 1.05rem;
+  background: linear-gradient(135deg, var(--primary), var(--c-violet));
+  flex: none;
+}
+.brand-text b {
+  display: block;
   font-size: 0.85rem;
+  font-weight: 800;
+  line-height: 1.2;
+  color: var(--text);
+  letter-spacing: -0.01em;
+}
+.brand-text > span {
+  font-size: 0.68rem;
+  color: var(--text-3);
+  font-weight: 600;
 }
 
 .admin-op-pill {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  background: rgba(255, 51, 51, 0.12);
-  border: 1px solid #ff3333;
-  color: #ff5e5e;
-  padding: 5px 12px;
-  border-radius: 999px;
-  font-size: 0.72rem;
+  gap: 7px;
+  background: color-mix(in srgb, var(--c-rose) 14%, transparent);
+  border: 1px solid transparent;
+  color: var(--c-rose);
+  padding: 8px 15px;
+  border-radius: var(--r-pill);
+  font-size: 0.75rem;
   font-weight: 700;
-  letter-spacing: 0.12em;
+  font-family: var(--font);
   cursor: pointer;
   user-select: none;
   transition: filter 0.15s;
 }
+.admin-op-pill.is-active {
+  background: color-mix(in srgb, var(--c-lime) 16%, transparent);
+  color: #15803d;
+}
+:global(.app-dark) .admin-op-pill.is-active { color: var(--c-lime); }
 
 .admin-op-pill.is-active {
   background: rgba(0, 255, 102, 0.12);
   border-color: #00ff66;
-  color: #00ff99;
+  color: var(--c-lime);
 }
 
 .admin-op-pill:hover {
@@ -1616,33 +1740,33 @@ const toggleSharedSimulation = () => {
 }
 
 .admin-op-dot {
-  width: 8px;
-  height: 8px;
+  width: 7px;
+  height: 7px;
   border-radius: 50%;
   background: currentColor;
-  box-shadow: 0 0 8px currentColor;
+  box-shadow: 0 0 0 4px color-mix(in srgb, currentColor 22%, transparent);
 }
 
 .mode-selector {
   display: flex;
   gap: 6px;
   align-items: center;
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: var(--surface-2);
+  border: 1px solid var(--surface-2);
   padding: 4px 10px;
   border-radius: 4px;
 }
 
 .mode-label {
   font-size: 0.7rem;
-  color: #888;
+  color: var(--text-2);
   letter-spacing: 0.05em;
   text-transform: uppercase;
 }
 
 .mode-btn {
   background: transparent;
-  color: #ccc;
+  color: var(--text-2);
   border: 1px solid transparent;
   padding: 3px 9px;
   border-radius: 3px;
@@ -1653,13 +1777,13 @@ const toggleSharedSimulation = () => {
 }
 
 .mode-btn:hover {
-  border-color: rgba(0, 204, 255, 0.4);
-  color: #fff;
+  border-color: color-mix(in srgb, var(--primary) 18%, transparent);
+  color: var(--text);
 }
 
 .mode-btn.active {
-  background: #00ccff;
-  color: #000;
+  background: var(--primary);
+  color: var(--text);
   font-weight: bold;
 }
 
@@ -1670,34 +1794,68 @@ const toggleSharedSimulation = () => {
 }
 
 .header-btn {
-  background: rgba(255, 255, 255, 0.04);
-  color: #ccc;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  padding: 6px 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--surface-2);
+  color: var(--text-2);
+  border: 1px solid var(--border);
+  padding: 9px 14px;
   cursor: pointer;
   font-weight: 600;
-  font-size: 0.75rem;
-  letter-spacing: 0.08em;
-  border-radius: 4px;
-  transition: all 0.15s;
-  font-family: inherit;
+  font-size: 0.78rem;
+  border-radius: var(--r-pill);
+  transition: background 0.16s, color 0.16s, transform 0.16s;
+  font-family: var(--font);
+  white-space: nowrap;
+}
+.header-btn:hover {
+  background: var(--surface-3);
+  color: var(--text);
+  transform: translateY(-1px);
+}
+.header-btn.active {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: var(--on-primary);
+}
+.header-btn.icon-only { padding: 9px 12px; }
+.header-btn.subtle { background: transparent; border-color: transparent; }
+.header-btn.subtle:hover { background: var(--surface-2); }
+.header-btn.danger:hover {
+  background: color-mix(in srgb, var(--c-rose) 15%, transparent);
+  color: var(--c-rose);
+  border-color: transparent;
+}
+.header-user { display: flex; align-items: center; gap: 6px; }
+.user-chip {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: var(--primary-soft);
+  color: var(--primary);
+  font-size: 0.72rem;
+  font-weight: 800;
+  flex: none;
 }
 
 .header-btn:hover {
-  border-color: rgba(0, 204, 255, 0.5);
-  color: #fff;
+  border-color: color-mix(in srgb, var(--primary) 18%, transparent);
+  color: var(--text);
 }
 
 .header-btn.active {
   background: #ff3333;
   border-color: #ff3333;
-  color: #fff;
+  color: var(--text);
 }
 
 .header-btn.danger:hover {
   background: rgba(255, 51, 51, 0.15);
   border-color: #ff3333;
-  color: #ff6e6e;
+  color: var(--c-rose);
 }
 
 .header-btn.sidebar-toggle {
@@ -1714,11 +1872,14 @@ const toggleSharedSimulation = () => {
   display: flex;
   align-items: center;
   justify-content: safe center;
-  background: #0a0a0a;
-  font-family: 'JetBrains Mono', 'Courier New', monospace;
-  color: #00ccff;
-  padding: 20px;
-  overflow: auto;
+  padding: 24px;
+  overflow-y: auto;
+  background:
+    radial-gradient(900px 500px at 20% -10%, color-mix(in srgb, var(--primary) 16%, transparent), transparent 60%),
+    radial-gradient(700px 400px at 90% 10%, color-mix(in srgb, var(--c-violet) 16%, transparent), transparent 55%),
+    var(--bg);
+  font-family: var(--font);
+  color: var(--text);
 }
 
 .auth-overlay::before {
@@ -1727,8 +1888,8 @@ const toggleSharedSimulation = () => {
   inset: 0;
   background: repeating-linear-gradient(
     0deg,
-    rgba(0, 204, 255, 0.025) 0px,
-    rgba(0, 204, 255, 0.025) 1px,
+    color-mix(in srgb, var(--primary) 18%, transparent) 0px,
+    color-mix(in srgb, var(--primary) 18%, transparent) 1px,
     transparent 1px,
     transparent 3px
   );
@@ -1738,20 +1899,15 @@ const toggleSharedSimulation = () => {
 .auth-frame {
   position: relative;
   width: 100%;
-  max-width: 440px;
-  padding: 36px 28px;
-  background: rgba(0, 0, 0, 0.88);
-  border: 1px solid rgba(0, 204, 255, 0.3);
-  box-shadow: 0 0 60px rgba(0, 204, 255, 0.18), inset 0 0 30px rgba(0, 204, 255, 0.04);
+  max-width: 420px;
+  padding: 36px 30px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-xl);
+  box-shadow: var(--shadow-lg);
 }
 
-.auth-corner {
-  position: absolute;
-  width: 16px;
-  height: 16px;
-  border: 2px solid #00ccff;
-  opacity: 0.8;
-}
+.auth-corner { display: none; }
 .auth-corner.top-left     { top: 6px;    left: 6px;    border-right: none;  border-bottom: none; }
 .auth-corner.top-right    { top: 6px;    right: 6px;   border-left: none;   border-bottom: none; }
 .auth-corner.bottom-left  { bottom: 6px; left: 6px;    border-right: none;  border-top: none; }
@@ -1759,41 +1915,50 @@ const toggleSharedSimulation = () => {
 
 .auth-heading {
   display: flex;
-  align-items: baseline;
-  gap: 10px;
+  flex-direction: column;
+  gap: 4px;
   margin-bottom: 26px;
 }
 
 .auth-prefix {
-  font-size: 0.8rem;
-  opacity: 0.45;
+  font-family: var(--font-mono);
+  font-size: 0.66rem;
+  font-weight: 700;
   letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--text-3);
 }
 
 .auth-name {
-  font-size: 1.15rem;
+  font-size: 1.5rem;
   font-weight: 900;
-  letter-spacing: 0.12em;
-  text-shadow: 0 0 14px rgba(0, 204, 255, 0.45);
+  letter-spacing: -0.025em;
+  background: linear-gradient(100deg, var(--primary), var(--c-violet));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
 }
 
 .auth-checking {
   font-size: 0.8rem;
   letter-spacing: 0.15em;
-  color: #888;
+  color: var(--text-2);
   padding: 20px 0;
 }
 
 .auth-tabs {
   display: flex;
-  gap: 8px;
+  gap: 5px;
+  padding: 5px;
+  background: var(--surface-2);
+  border-radius: var(--r-pill);
   margin-bottom: 20px;
 }
 
 .auth-tabs button {
   flex: 1;
   background: transparent;
-  border: 1px solid rgba(0, 204, 255, 0.25);
+  border: 1px solid color-mix(in srgb, var(--primary) 18%, transparent);
   color: #6a8f9c;
   font-family: inherit;
   font-size: 0.72rem;
@@ -1805,9 +1970,9 @@ const toggleSharedSimulation = () => {
 }
 
 .auth-tabs button.active {
-  border-color: #00ccff;
-  color: #00ccff;
-  background: rgba(0, 204, 255, 0.08);
+  border-color: var(--primary);
+  color: var(--primary);
+  background: color-mix(in srgb, var(--primary) 18%, transparent);
 }
 
 .auth-form {
@@ -1826,9 +1991,9 @@ const toggleSharedSimulation = () => {
 }
 
 .auth-input {
-  background: #000;
-  border: 1px solid rgba(0, 204, 255, 0.35);
-  color: #fff;
+  background: var(--surface);
+  border: 1px solid color-mix(in srgb, var(--primary) 18%, transparent);
+  color: var(--text);
   font-family: inherit;
   font-size: 0.95rem;
   padding: 11px 12px;
@@ -1837,8 +2002,8 @@ const toggleSharedSimulation = () => {
 }
 
 .auth-input:focus {
-  border-color: #00ccff;
-  box-shadow: 0 0 14px rgba(0, 204, 255, 0.25);
+  border-color: var(--primary);
+  box-shadow: 0 0 14px color-mix(in srgb, var(--primary) 18%, transparent);
 }
 
 .auth-error {
@@ -1852,8 +2017,8 @@ const toggleSharedSimulation = () => {
 
 .auth-submit {
   background: transparent;
-  border: 1px solid #00ccff;
-  color: #00ccff;
+  border: 1px solid var(--primary);
+  color: var(--primary);
   padding: 13px;
   font-family: inherit;
   font-weight: 700;
@@ -1864,9 +2029,9 @@ const toggleSharedSimulation = () => {
 }
 
 .auth-submit:hover:not(:disabled) {
-  background: #00ccff;
-  color: #000;
-  box-shadow: 0 0 24px rgba(0, 204, 255, 0.65);
+  background: var(--primary);
+  color: var(--text);
+  box-shadow: 0 0 24px color-mix(in srgb, var(--primary) 18%, transparent);
 }
 
 .auth-submit:disabled {
@@ -1881,56 +2046,56 @@ const toggleSharedSimulation = () => {
   color: #667;
 }
 
-.auth-user {
-  color: #ffcc00;
-  font-size: 0.72rem;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  max-width: 140px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 /* ---- join code banner ---- */
 
-.join-code-banner {
+.join-card {
   position: absolute;
-  top: 52px;
-  left: 16px;
+  top: 84px;
+  left: 12px;
   z-index: 1490;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 8px 14px;
-  background: rgba(0, 0, 0, 0.85);
-  border: 1px solid rgba(255, 204, 0, 0.45);
-  border-radius: 4px;
-  backdrop-filter: blur(6px);
-  font-family: 'JetBrains Mono', monospace;
+  padding: 14px 18px;
+  background: color-mix(in srgb, var(--surface) 90%, transparent);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  backdrop-filter: blur(14px);
+  box-shadow: var(--shadow-md);
 }
+.jcb-row { display: flex; align-items: center; gap: 8px; }
+.jcb-mini {
+  width: 32px;
+  height: 32px;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text-2);
+  cursor: pointer;
+  font-size: 0.8rem;
+}
+.jcb-mini:hover { background: var(--surface-3); color: var(--text); }
 
 .jcb-label {
-  font-size: 0.62rem;
+  font-size: 0.64rem;
   font-weight: 700;
   letter-spacing: 0.14em;
-  color: #ffcc00;
-  opacity: 0.85;
+  text-transform: uppercase;
+  color: var(--text-3);
+  margin-bottom: 8px;
 }
 
 .jcb-code {
-  background: rgba(255, 204, 0, 0.1);
-  border: 1px dashed rgba(255, 204, 0, 0.6);
-  color: #ffcc00;
-  font-family: inherit;
-  font-size: 1.05rem;
-  font-weight: 900;
-  letter-spacing: 0.35em;
-  padding: 4px 6px 4px 12px;
-  border-radius: 3px;
+  background: var(--primary-soft);
+  border: 0;
+  color: var(--primary);
+  font-family: var(--font-mono);
+  font-size: 1.5rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  padding: 5px 12px;
+  border-radius: var(--r-sm);
   cursor: pointer;
-  transition: all 0.15s;
+  transition: filter 0.15s;
 }
+.jcb-code:hover { filter: brightness(1.06); }
 
 .jcb-code:hover {
   background: rgba(255, 204, 0, 0.22);
@@ -1938,16 +2103,17 @@ const toggleSharedSimulation = () => {
 }
 
 .jcb-copied {
-  color: #00ff99;
-  font-size: 0.68rem;
-  font-weight: 800;
-  letter-spacing: 0.1em;
+  display: inline-block;
+  margin-top: 8px;
+  color: var(--c-lime);
+  font-size: 0.7rem;
+  font-weight: 700;
 }
 
 .jcb-regen {
   background: transparent;
   border: 1px solid rgba(255, 255, 255, 0.2);
-  color: #aaa;
+  color: var(--text-2);
   font-family: inherit;
   font-size: 0.62rem;
   font-weight: 700;
@@ -1959,32 +2125,32 @@ const toggleSharedSimulation = () => {
 
 .jcb-regen:hover {
   border-color: rgba(255, 204, 0, 0.6);
-  color: #ffcc00;
+  color: var(--c-amber);
 }
 
 .op-code {
-  color: #ffcc00;
+  color: var(--c-amber);
   font-size: 0.68rem;
   font-weight: 800;
   letter-spacing: 0.18em;
-  font-family: 'JetBrains Mono', monospace;
+  font-family: var(--font-mono);
   opacity: 0.85;
 }
 
 /* ---- operations catalog ---- */
 
 .op-select {
-  background: rgba(255, 255, 255, 0.04);
-  color: #ffcc00;
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  padding: 6px 10px;
-  font-weight: 700;
-  font-size: 0.75rem;
-  letter-spacing: 0.08em;
-  border-radius: 4px;
-  font-family: inherit;
+  background: var(--surface-2);
+  color: var(--text);
+  border: 1px solid var(--border);
+  padding: 9px 14px;
+  font-weight: 600;
+  font-size: 0.78rem;
+  border-radius: var(--r-pill);
+  font-family: var(--font);
   max-width: 220px;
   cursor: pointer;
+  outline: none;
 }
 
 .op-select:hover {
@@ -1992,8 +2158,8 @@ const toggleSharedSimulation = () => {
 }
 
 .op-select option {
-  background: #111;
-  color: #eee;
+  background: var(--surface-2);
+  color: var(--text);
 }
 
 .op-list {
@@ -2007,9 +2173,9 @@ const toggleSharedSimulation = () => {
   align-items: center;
   gap: 8px;
   padding: 8px 10px;
-  border: 1px solid #222;
+  border: 1px solid var(--border);
   border-radius: 4px;
-  background: rgba(255, 255, 255, 0.02);
+  background: var(--surface-2);
 }
 
 .op-row.is-live {
@@ -2019,14 +2185,14 @@ const toggleSharedSimulation = () => {
 .op-name {
   flex: 1;
   font-size: 0.8rem;
-  color: #ddd;
+  color: var(--text);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .op-live-tag {
-  color: #00ff99;
+  color: var(--c-lime);
   font-size: 0.65rem;
   font-weight: 800;
   letter-spacing: 0.12em;
@@ -2056,12 +2222,12 @@ const toggleSharedSimulation = () => {
 }
 
 .roster-member {
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid #2a2a2a;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
   padding: 3px 9px;
   border-radius: 999px;
   font-size: 0.72rem;
-  color: #ccc;
+  color: var(--text-2);
 }
 
 .roster-member.is-driver {
@@ -2077,32 +2243,41 @@ const toggleSharedSimulation = () => {
 
 .mode-pick-btn {
   flex: 1;
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid #333;
-  color: #999;
-  font-family: 'JetBrains Mono', monospace;
-  font-size: 0.72rem;
-  font-weight: 800;
-  letter-spacing: 0.1em;
-  padding: 10px 8px;
-  border-radius: 3px;
+  font-family: var(--font);
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--text-2);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  padding: 12px 10px;
+  border-radius: var(--r-pill);
   cursor: pointer;
-  transition: all 0.15s;
+  transition: all 0.18s;
+}
+.mode-pick-btn.active {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: var(--on-primary);
+}
+.mode-pick-btn.is-explore.active {
+  background: var(--c-lime);
+  border-color: var(--c-lime);
+  color: #052e16;
 }
 
 .mode-pick-btn:hover { border-color: #666; color: #ddd; }
 
 .mode-pick-btn.active {
-  background: rgba(0, 204, 255, 0.12);
-  border-color: #00ccff;
-  color: #00ccff;
-  box-shadow: 0 0 12px rgba(0, 204, 255, 0.25);
+  background: color-mix(in srgb, var(--primary) 18%, transparent);
+  border-color: var(--primary);
+  color: var(--primary);
+  box-shadow: 0 0 12px color-mix(in srgb, var(--primary) 18%, transparent);
 }
 
 .mode-pick-btn.is-explore.active {
   background: rgba(0, 255, 136, 0.1);
   border-color: #00ff88;
-  color: #00ff88;
+  color: var(--c-lime);
   box-shadow: 0 0 12px rgba(0, 255, 136, 0.25);
 }
 
@@ -2149,7 +2324,7 @@ const toggleSharedSimulation = () => {
   margin-bottom: 6px;
   font-size: 0.74rem;
   line-height: 1.4;
-  color: #ccc;
+  color: var(--text-2);
 }
 
 .sab-mission-row.is-done {
@@ -2201,7 +2376,7 @@ const toggleSharedSimulation = () => {
   max-height: 90vh;
   overflow-y: auto;
   background: rgba(10, 10, 10, 0.97);
-  border: 1px solid #333;
+  border: 1px solid var(--border);
   border-radius: 8px;
   padding: 20px;
 }
@@ -2211,7 +2386,7 @@ const toggleSharedSimulation = () => {
   gap: 18px;
   margin: 14px 0;
   font-size: 0.8rem;
-  color: #ccc;
+  color: var(--text-2);
 }
 
 .op-mode-row label {
@@ -2243,7 +2418,7 @@ const toggleSharedSimulation = () => {
   align-items: center;
   gap: 4px;
   font-size: 0.8rem;
-  color: #ccc;
+  color: var(--text-2);
   cursor: pointer;
   white-space: nowrap;
 }
@@ -2253,7 +2428,7 @@ const toggleSharedSimulation = () => {
 }
 
 .op-modal-error {
-  color: #ff6e6e;
+  color: var(--c-rose);
   font-size: 0.78rem;
   margin-top: 10px;
 }
@@ -2267,23 +2442,61 @@ const toggleSharedSimulation = () => {
 
 .admin-sidebar {
   position: absolute;
-  top: 56px;
-  right: 0;
-  bottom: 0;
-  width: 380px;
+  top: 12px;
+  right: 12px;
+  bottom: 12px;
+  width: 400px;
   max-width: 92vw;
-  background: rgba(10, 10, 10, 0.94);
-  backdrop-filter: blur(10px);
-  border-left: 1px solid rgba(0, 204, 255, 0.15);
+  padding-top: 62px;
+  background: color-mix(in srgb, var(--surface) 92%, transparent);
+  backdrop-filter: blur(16px);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
   display: flex;
   flex-direction: column;
-  overflow-y: auto;
-  overflow-x: hidden;
+  overflow: hidden;
   z-index: 1400;
-  transform: translateX(100%);
+  transform: translateX(calc(100% + 16px));
   transition: transform 0.25s ease-out;
-  box-shadow: -8px 0 24px rgba(0, 0, 0, 0.5);
+  box-shadow: var(--shadow-lg);
 }
+
+/* --- tab rail --- */
+.side-tabs {
+  display: flex;
+  gap: 4px;
+  padding: 10px 10px 8px;
+  border-bottom: 1px solid var(--border);
+  overflow-x: auto;
+  scrollbar-width: none;
+  flex: none;
+}
+.side-tabs::-webkit-scrollbar { display: none; }
+.side-tab {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font);
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--text-3);
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  padding: 9px 13px;
+  border-radius: var(--r-pill);
+  transition: background 0.16s, color 0.16s;
+  white-space: nowrap;
+}
+.side-tab:hover { background: var(--surface-2); color: var(--text-2); }
+.side-tab.active { background: var(--primary); color: var(--on-primary); }
+.tab-ico { font-size: 0.85rem; }
+
+.side-panel { flex: 1; overflow-y: auto; overflow-x: hidden; }
+.side-panel::-webkit-scrollbar { width: 8px; }
+.side-panel::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+.tab-pane { padding: 4px 0 24px; }
 
 .admin-sidebar,
 .admin-sidebar * {
@@ -2301,34 +2514,22 @@ const toggleSharedSimulation = () => {
   transform: translateX(0);
 }
 
-.sidebar-header {
-  padding: 20px;
-  border-bottom: 1px solid #222;
-}
+/* The sidebar toggle sits inside the header, which is itself a floating card,
+   so the button needs to stay reachable when the panel is closed. */
+.sidebar-toggle { margin-left: 2px; }
 
-.sidebar-title {
-  font-size: 1.2rem;
-  font-weight: 800;
-  color: #eee;
-}
-
-.sidebar-subtitle {
-  font-size: 0.75rem;
-  color: #666;
-  margin-top: 4px;
-}
-
-.sidebar-section {
-  padding: 10px;
-}
+.sidebar-section { padding: 0; }
 
 .team-card {
-  background: #1a1a1a;
-  border: 1px solid #333;
-  border-radius: 8px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
   padding: 15px;
-  margin-bottom: 15px;
+  margin-bottom: 11px;
+  box-shadow: var(--shadow-sm);
+  transition: box-shadow 0.18s;
 }
+.team-card:hover { box-shadow: var(--shadow-md); }
 
 .team-card-head {
   display: flex;
@@ -2343,17 +2544,21 @@ const toggleSharedSimulation = () => {
 }
 
 .kick-btn {
-  background: transparent;
-  border: 1px solid #553a3a;
-  color: #ff7777;
-  font-family: inherit;
-  font-size: 0.65rem;
+  font-family: var(--font);
+  font-size: 0.66rem;
   font-weight: 700;
-  letter-spacing: 0.12em;
-  padding: 4px 9px;
-  border-radius: 3px;
+  color: var(--text-3);
+  background: transparent;
+  border: 1px solid var(--border);
+  padding: 5px 10px;
+  border-radius: var(--r-pill);
   cursor: pointer;
-  transition: all 0.15s;
+  transition: background 0.15s, color 0.15s;
+}
+.kick-btn:hover {
+  background: color-mix(in srgb, var(--c-rose) 14%, transparent);
+  color: var(--c-rose);
+  border-color: transparent;
 }
 
 .kick-btn:hover {
@@ -2363,20 +2568,24 @@ const toggleSharedSimulation = () => {
 }
 
 .team-card-title {
+  font-size: 0.88rem;
   font-weight: 700;
-  color: #00ccff;
-  margin-bottom: 10px;
-  text-transform: uppercase;
+  letter-spacing: -0.01em;
+  color: var(--text);
 }
 
 .team-row {
   display: flex;
   justify-content: space-between;
-  font-size: 0.85rem;
-  margin-bottom: 6px;
+  gap: 10px;
+  padding: 7px 0;
+  font-size: 0.78rem;
+  color: var(--text-2);
+  border-top: 1px solid var(--border);
 }
+.team-row:first-of-type { border-top: none; }
 
-.status-ok { color: #00ff00; }
+.status-ok { color: var(--c-lime); }
 .status-warn { color: #ffcc00; }
 .status-alert { color: #ff3333; font-weight: bold; }
 
@@ -2394,27 +2603,30 @@ const toggleSharedSimulation = () => {
 }
 
 .override-btn {
-  background: rgba(0, 204, 255, 0.08);
-  border: 1px solid rgba(0, 204, 255, 0.28);
-  color: #9ceeff;
-  font-family: inherit;
-  font-size: 0.7rem;
-  font-weight: 700;
-  padding: 7px 8px;
-  border-radius: 3px;
+  flex: 1;
+  font-family: var(--font);
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--text-2);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  padding: 8px;
+  border-radius: var(--r-sm);
   cursor: pointer;
+  transition: background 0.15s, color 0.15s;
 }
+.override-btn:hover { background: var(--surface-3); color: var(--text); }
 
 .override-btn:hover {
-  background: rgba(0, 204, 255, 0.16);
-  border-color: rgba(0, 204, 255, 0.55);
-  color: #fff;
+  background: color-mix(in srgb, var(--primary) 18%, transparent);
+  border-color: color-mix(in srgb, var(--primary) 18%, transparent);
+  color: var(--text);
 }
 
 .debug-panel {
   margin-top: 15px;
   padding-top: 15px;
-  border-top: 1px dashed #444;
+  border-top: 1px dashed var(--border);
 }
 
 .debug-row {
@@ -2427,14 +2639,14 @@ const toggleSharedSimulation = () => {
 .debug-row label {
   font-size: 0.7rem;
   width: 30px;
-  color: #888;
+  color: var(--text-2);
 }
 
 .debug-row input {
   flex: 1;
-  background: #000;
-  border: 1px solid #444;
-  color: #fff;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--text);
   padding: 4px;
   font-size: 0.8rem;
 }
@@ -2443,23 +2655,33 @@ const toggleSharedSimulation = () => {
   width: 100%;
   background: #444;
   border: none;
-  color: #fff;
+  color: var(--text);
   padding: 6px;
   margin-top: 4px;
   cursor: pointer;
   font-size: 0.8rem;
 }
 
+/* Sections no longer need dividers — the tab rail separates them now, and a
+   border on every block made the old sidebar look like a stack of receipts. */
 .checkpoint-section, .meeting-section {
-  padding: 20px;
-  border-top: 1px solid #222;
+  padding: 16px;
+}
+.tab-pane > .sidebar-section { padding: 16px; }
+/* Consecutive blocks inside a pane get a hairline instead of a full border. */
+.tab-pane > .meeting-section + .meeting-section,
+.tab-pane > .sidebar-section + .meeting-section,
+.tab-pane > .meeting-section + .sidebar-section {
+  border-top: 1px solid var(--border);
 }
 
 .section-title {
-  font-size: 0.9rem;
+  font-size: 0.66rem;
   font-weight: 700;
-  margin-bottom: 15px;
-  color: #888;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  margin-bottom: 12px;
+  color: var(--text-3);
 }
 
 .section-title-row {
@@ -2473,9 +2695,9 @@ const toggleSharedSimulation = () => {
 }
 
 .export-cp-btn {
-  background: rgba(0, 204, 255, 0.08);
-  color: #00ccff;
-  border: 1px solid rgba(0, 204, 255, 0.35);
+  background: color-mix(in srgb, var(--primary) 18%, transparent);
+  color: var(--primary);
+  border: 1px solid color-mix(in srgb, var(--primary) 18%, transparent);
   padding: 5px 10px;
   margin-bottom: 15px;
   cursor: pointer;
@@ -2488,16 +2710,16 @@ const toggleSharedSimulation = () => {
   transition: background 0.15s, border-color 0.15s;
 }
 .export-cp-btn:hover:not(:disabled) {
-  background: rgba(0, 204, 255, 0.18);
-  border-color: #00ccff;
+  background: color-mix(in srgb, var(--primary) 18%, transparent);
+  border-color: var(--primary);
 }
 .export-cp-btn:disabled {
   opacity: 0.4;
   cursor: not-allowed;
 }
 .export-cp-btn.is-active {
-  background: rgba(0, 204, 255, 0.22);
-  border-color: #00ccff;
+  background: color-mix(in srgb, var(--primary) 18%, transparent);
+  border-color: var(--primary);
 }
 
 .cp-actions {
@@ -2513,9 +2735,9 @@ const toggleSharedSimulation = () => {
 .cp-import-textarea {
   width: 100%;
   box-sizing: border-box;
-  background: #111;
-  color: #eee;
-  border: 1px solid rgba(0, 204, 255, 0.35);
+  background: var(--surface-2);
+  color: var(--text);
+  border: 1px solid color-mix(in srgb, var(--primary) 18%, transparent);
   border-radius: 4px;
   padding: 8px 10px;
   font-family: inherit;
@@ -2525,7 +2747,7 @@ const toggleSharedSimulation = () => {
 }
 .cp-import-textarea:focus {
   outline: none;
-  border-color: #00ccff;
+  border-color: var(--primary);
 }
 
 .cp-import-row {
@@ -2542,14 +2764,14 @@ const toggleSharedSimulation = () => {
 
 .checkpoint-empty {
   font-size: 0.8rem;
-  color: #666;
+  color: var(--text-3);
   font-style: italic;
   padding: 4px 0;
 }
 
 .team-group {
   margin-bottom: 14px;
-  border-left: 3px solid var(--team-color, #444);
+  border-left: 3px solid var(--team-color, var(--border));
   padding-left: 10px;
 }
 
@@ -2561,7 +2783,7 @@ const toggleSharedSimulation = () => {
   font-size: 0.75rem;
   font-weight: 700;
   letter-spacing: 0.08em;
-  color: var(--team-color, #ccc);
+  color: var(--team-color, var(--text-2));
   text-transform: uppercase;
 }
 
@@ -2576,7 +2798,7 @@ const toggleSharedSimulation = () => {
 
 .team-count {
   margin-left: auto;
-  color: #888;
+  color: var(--text-2);
   font-weight: 500;
   font-size: 0.7rem;
 }
@@ -2585,7 +2807,7 @@ const toggleSharedSimulation = () => {
   display: flex;
   align-items: center;
   gap: 10px;
-  background: #1a1a1a;
+  background: var(--surface-2);
   padding: 8px 12px;
   margin-bottom: 6px;
   border-radius: 4px;
@@ -2610,7 +2832,7 @@ const toggleSharedSimulation = () => {
 .cp-index {
   flex: 0 0 22px;
   text-align: center;
-  color: var(--team-color, #ccc);
+  color: var(--team-color, var(--text-2));
   font-weight: 700;
   font-size: 0.8rem;
 }
@@ -2621,7 +2843,7 @@ const toggleSharedSimulation = () => {
 }
 
 .cp-name {
-  color: #eee;
+  color: var(--text);
   display: flex;
   align-items: center;
   flex-wrap: wrap;
@@ -2630,7 +2852,7 @@ const toggleSharedSimulation = () => {
 }
 
 .cp-pos {
-  color: #777;
+  color: var(--text-3);
   font-size: 0.7rem;
   margin-top: 2px;
   font-variant-numeric: tabular-nums;
@@ -2638,7 +2860,7 @@ const toggleSharedSimulation = () => {
 
 .cp-badge {
   background: #ffcc00;
-  color: #000;
+  color: var(--text);
   font-size: 0.6rem;
   font-weight: 700;
   padding: 1px 5px;
@@ -2652,7 +2874,7 @@ const toggleSharedSimulation = () => {
 .cp-badge.badge-shared { background: #00ccff; color: #001016; }
 
 .cp-region {
-  color: #666;
+  color: var(--text-3);
   font-size: 0.65rem;
   text-transform: uppercase;
   letter-spacing: 0.06em;
@@ -2660,14 +2882,14 @@ const toggleSharedSimulation = () => {
 }
 
 .cp-city {
-  color: #9ceeff;
+  color: var(--primary);
   font-size: 0.7rem;
   letter-spacing: 0.04em;
   margin-left: 4px;
 }
 
 .cp-arrive {
-  color: #ffcc00;
+  color: var(--c-amber);
   font-size: 0.7rem;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
@@ -2685,18 +2907,18 @@ const toggleSharedSimulation = () => {
 }
 
 .cp-edit-city-label {
-  color: #888;
+  color: var(--text-2);
   text-transform: uppercase;
   letter-spacing: 0.06em;
 }
 
 .cp-edit-city-value {
-  color: #9ceeff;
+  color: var(--primary);
   font-weight: 600;
 }
 
 .cp-challenge {
-  color: #aaa;
+  color: var(--text-2);
   font-size: 0.72rem;
   margin-top: 4px;
   line-height: 1.3;
@@ -2705,7 +2927,7 @@ const toggleSharedSimulation = () => {
 }
 
 .cp-time {
-  color: #ffcc00;
+  color: var(--c-amber);
   font-size: 0.75rem;
   margin-top: 3px;
   display: flex;
@@ -2715,7 +2937,7 @@ const toggleSharedSimulation = () => {
 }
 
 .cp-time.time-unset {
-  color: #666;
+  color: var(--text-3);
   opacity: 0.6;
 }
 
@@ -2739,7 +2961,7 @@ const toggleSharedSimulation = () => {
 .cp-edit-btn {
   background: none;
   border: none;
-  color: #888;
+  color: var(--text-2);
   cursor: pointer;
   font-size: 0.9rem;
   padding: 2px 6px;
@@ -2747,13 +2969,13 @@ const toggleSharedSimulation = () => {
 }
 
 .cp-edit-btn:hover {
-  color: #ffcc00;
+  color: var(--c-amber);
   background: rgba(255, 204, 0, 0.1);
 }
 
 .checkpoint-item.is-editing {
   background: #14181f;
-  outline: 1px solid var(--team-color, #444);
+  outline: 1px solid var(--team-color, var(--border));
 }
 
 .cp-edit-input,
@@ -2772,7 +2994,7 @@ const toggleSharedSimulation = () => {
 }
 
 .cp-edit-time-row label {
-  color: #888;
+  color: var(--text-2);
   font-weight: 600;
   flex: 0 0 auto;
 }
@@ -2802,8 +3024,8 @@ const toggleSharedSimulation = () => {
 
 .cp-cancel-btn {
   background: transparent;
-  border: 1px solid #444;
-  color: #888;
+  border: 1px solid var(--border);
+  color: var(--text-2);
   padding: 6px 12px;
   font-size: 0.75rem;
   cursor: pointer;
@@ -2812,7 +3034,7 @@ const toggleSharedSimulation = () => {
 
 .cp-cancel-btn:hover {
   border-color: #888;
-  color: #ccc;
+  color: var(--text-2);
 }
 
 .gen-grid {
@@ -2828,20 +3050,9 @@ const toggleSharedSimulation = () => {
 
 .gen-hint {
   font-size: 0.7rem;
-  color: #666;
+  color: var(--text-3);
   margin-bottom: 10px;
   letter-spacing: 0.02em;
-}
-
-.walking-hint {
-  font-size: 0.7rem;
-  color: #ffcc00;
-  background: rgba(255, 204, 0, 0.08);
-  border: 1px solid rgba(255, 204, 0, 0.35);
-  padding: 6px 8px;
-  margin-bottom: 10px;
-  line-height: 1.35;
-  border-radius: 2px;
 }
 
 .point-row {
@@ -2851,13 +3062,13 @@ const toggleSharedSimulation = () => {
 }
 
 .point-name {
-  color: #eee;
+  color: var(--text);
   font-weight: 600;
   font-size: 0.9rem;
 }
 
 .point-coords {
-  color: #666;
+  color: var(--text-3);
   font-size: 0.7rem;
   font-variant-numeric: tabular-nums;
 }
@@ -2881,7 +3092,7 @@ const toggleSharedSimulation = () => {
 
 .time-label {
   font-size: 0.7rem;
-  color: #888;
+  color: var(--text-2);
   letter-spacing: 0.08em;
   text-transform: uppercase;
   width: 70px;
@@ -2894,8 +3105,8 @@ const toggleSharedSimulation = () => {
 
 .time-clear {
   background: transparent;
-  border: 1px solid #444;
-  color: #888;
+  border: 1px solid var(--border);
+  color: var(--text-2);
   width: 26px;
   height: 26px;
   cursor: pointer;
@@ -2906,7 +3117,7 @@ const toggleSharedSimulation = () => {
 
 .time-clear:hover {
   border-color: #ff6666;
-  color: #ff6666;
+  color: var(--c-rose);
 }
 
 .gen-label {
@@ -2914,7 +3125,7 @@ const toggleSharedSimulation = () => {
   flex-direction: column;
   gap: 4px;
   font-size: 0.7rem;
-  color: #888;
+  color: var(--text-2);
   text-transform: uppercase;
   letter-spacing: 0.05em;
 }
@@ -2942,7 +3153,7 @@ const toggleSharedSimulation = () => {
 
 .slot-index {
   font-size: 0.7rem;
-  color: #666;
+  color: var(--text-3);
   width: 22px;
   font-variant-numeric: tabular-nums;
 }
@@ -2954,7 +3165,7 @@ const toggleSharedSimulation = () => {
 .delete-btn {
   background: none;
   border: none;
-  color: #ff3333;
+  color: var(--c-rose);
   cursor: pointer;
   font-weight: bold;
 }
@@ -2967,26 +3178,41 @@ const toggleSharedSimulation = () => {
 }
 
 .checkpoint-input {
-  background: #000;
-  border: 1px solid #333;
-  color: #fff;
-  padding: 8px;
-  font-size: 0.85rem;
-  border-radius: 4px;
+  width: 100%;
+  box-sizing: border-box;
+  font-family: var(--font);
+  font-size: 0.82rem;
+  color: var(--text);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  padding: 10px 12px;
+  border-radius: var(--r-sm);
+  outline: none;
+  transition: border-color 0.15s, background 0.15s;
+}
+.checkpoint-input:focus {
+  border-color: var(--primary);
+  background: var(--surface);
 }
 
 .add-btn {
-  background: #00ccff;
-  color: #000;
-  border: none;
-  padding: 10px;
-  font-weight: bold;
+  font-family: var(--font);
+  font-size: 0.8rem;
+  font-weight: 700;
+  background: linear-gradient(135deg, var(--primary), var(--c-violet));
+  color: #fff;
+  border: 0;
+  padding: 11px 16px;
+  border-radius: var(--r-pill);
   cursor: pointer;
-  border-radius: 4px;
+  transition: transform 0.16s, box-shadow 0.2s;
+  box-shadow: 0 6px 16px color-mix(in srgb, var(--primary) 30%, transparent);
 }
+.add-btn:hover:not(:disabled) { transform: translateY(-1px); }
+.add-btn:disabled { opacity: 0.5; box-shadow: none; cursor: default; }
 
 .meeting-info {
-  background: #1a1a1a;
+  background: var(--surface-2);
   padding: 15px;
   border-radius: 4px;
   font-size: 0.85rem;
@@ -2994,7 +3220,7 @@ const toggleSharedSimulation = () => {
 
 .chat-box,
 .arrival-log {
-  background: #1a1a1a;
+  background: var(--surface-2);
   border-radius: 4px;
   padding: 12px;
 }
@@ -3010,8 +3236,8 @@ const toggleSharedSimulation = () => {
 
 .chat-message,
 .arrival-entry {
-  background: #111;
-  border: 1px solid #2a2a2a;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
   border-radius: 4px;
   padding: 8px;
 }
@@ -3025,7 +3251,7 @@ const toggleSharedSimulation = () => {
   display: flex;
   justify-content: space-between;
   gap: 8px;
-  color: #888;
+  color: var(--text-2);
   font-size: 0.65rem;
   text-transform: uppercase;
   letter-spacing: 0.06em;
@@ -3034,7 +3260,7 @@ const toggleSharedSimulation = () => {
 
 .chat-text,
 .arrival-body {
-  color: #eee;
+  color: var(--text);
   font-size: 0.78rem;
   line-height: 1.35;
   word-break: break-word;
@@ -3055,8 +3281,8 @@ const toggleSharedSimulation = () => {
 }
 
 .chat-send:disabled {
-  background: #333;
-  color: #777;
+  background: var(--surface-3);
+  color: var(--text-3);
   cursor: not-allowed;
 }
 
@@ -3070,7 +3296,7 @@ const toggleSharedSimulation = () => {
 
 .arrival-title,
 .arrival-meta {
-  color: #777;
+  color: var(--text-3);
   font-size: 0.68rem;
 }
 
@@ -3096,29 +3322,29 @@ const toggleSharedSimulation = () => {
 }
 
 .log-empty {
-  color: #666;
+  color: var(--text-3);
   font-size: 0.78rem;
   font-style: italic;
 }
 
 .gen-progress-box {
   background: #002233;
-  border: 1px solid #00ccff;
+  border: 1px solid var(--primary);
   padding: 10px;
   border-radius: 4px;
   display: flex;
   align-items: center;
   gap: 12px;
   font-size: 0.75rem;
-  color: #00ccff;
-  font-family: 'JetBrains Mono', monospace;
+  color: var(--primary);
+  font-family: var(--font-mono);
 }
 
 .spinner-small {
   width: 16px;
   height: 16px;
-  border: 2px solid rgba(0, 204, 255, 0.3);
-  border-top-color: #00ccff;
+  border: 2px solid color-mix(in srgb, var(--primary) 18%, transparent);
+  border-top-color: var(--primary);
   border-radius: 50%;
   animation: spin 0.8s linear infinite;
 }
@@ -3128,7 +3354,7 @@ const toggleSharedSimulation = () => {
 }
 
 .scoring-info {
-  background: #1a1a1a;
+  background: var(--surface-2);
   padding: 12px;
   border-radius: 4px;
 }
@@ -3143,9 +3369,9 @@ const toggleSharedSimulation = () => {
 .score-row {
   display: flex;
   gap: 10px;
-  background: #111;
-  border: 1px solid #2a2a2a;
-  border-left: 3px solid var(--team-color, #444);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--team-color, var(--border));
   border-radius: 4px;
   padding: 10px;
 }
@@ -3154,13 +3380,13 @@ const toggleSharedSimulation = () => {
   flex: 0 0 22px;
   font-size: 1.1rem;
   font-weight: 800;
-  color: #666;
+  color: var(--text-3);
   text-align: center;
   font-variant-numeric: tabular-nums;
 }
 
 .score-row:first-child .score-rank {
-  color: #ffcc00;
+  color: var(--c-amber);
   text-shadow: 0 0 8px rgba(255, 204, 0, 0.55);
 }
 
@@ -3187,12 +3413,12 @@ const toggleSharedSimulation = () => {
 .score-total {
   font-weight: 800;
   font-size: 1rem;
-  color: #eee;
+  color: var(--text);
   font-variant-numeric: tabular-nums;
 }
 
 .score-progress {
-  color: #888;
+  color: var(--text-2);
   font-size: 0.68rem;
   letter-spacing: 0.04em;
   margin-bottom: 6px;
@@ -3216,11 +3442,108 @@ const toggleSharedSimulation = () => {
 .bd-label { color: #777; text-transform: uppercase; letter-spacing: 0.05em; }
 
 .scoring-legend {
-  color: #555;
+  color: var(--text-3);
   font-size: 0.62rem;
   line-height: 1.5;
   letter-spacing: 0.03em;
   padding-top: 8px;
-  border-top: 1px solid #222;
+  border-top: 1px solid var(--border);
 }
+
+
+/* ---- login screen, token-based ---- */
+.auth-tabs button {
+  flex: 1;
+  font-family: var(--font);
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--text-2);
+  background: transparent;
+  border: 0;
+  padding: 11px;
+  border-radius: var(--r-pill);
+  cursor: pointer;
+  transition: background 0.18s, color 0.18s;
+}
+.auth-tabs button.active {
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: var(--shadow-sm);
+}
+.auth-label {
+  display: block;
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: var(--text-2);
+  margin-bottom: 12px;
+  letter-spacing: 0.02em;
+}
+.auth-input {
+  width: 100%;
+  box-sizing: border-box;
+  margin-top: 6px;
+  font-family: var(--font);
+  font-size: 0.9rem;
+  color: var(--text);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  padding: 12px 14px;
+  border-radius: var(--r-sm);
+  outline: none;
+  transition: border-color 0.15s, background 0.15s;
+}
+.auth-input:focus { border-color: var(--primary); background: var(--surface); }
+.auth-submit {
+  width: 100%;
+  margin-top: 6px;
+  font-family: var(--font);
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: #fff;
+  background: linear-gradient(135deg, var(--primary), var(--c-violet));
+  border: 0;
+  padding: 14px;
+  border-radius: var(--r-pill);
+  cursor: pointer;
+  transition: transform 0.16s, box-shadow 0.2s;
+  box-shadow: 0 8px 20px color-mix(in srgb, var(--primary) 32%, transparent);
+}
+.auth-submit:hover:not(:disabled) { transform: translateY(-2px); }
+.auth-submit:disabled { opacity: 0.45; box-shadow: none; cursor: default; }
+.auth-error {
+  font-size: 0.78rem;
+  color: var(--c-rose);
+  background: color-mix(in srgb, var(--c-rose) 12%, transparent);
+  border-radius: var(--r-sm);
+  padding: 10px 12px;
+  margin-bottom: 12px;
+}
+.auth-hint {
+  font-size: 0.72rem;
+  line-height: 1.55;
+  color: var(--text-3);
+  margin: 18px 0 0;
+}
+
+/* ---- joker log: direction at a glance ---- */
+.joker-legend {
+  display: flex;
+  gap: 14px;
+  margin-bottom: 10px;
+  font-size: 0.66rem;
+  font-weight: 600;
+  color: var(--text-3);
+}
+.lg-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-right: 5px;
+}
+.lg-help { background: var(--c-lime); }
+.lg-harm { background: var(--c-rose); }
+
+.arrival-entry.is-help { border-left: 3px solid var(--c-lime); padding-left: 9px; }
+.arrival-entry.is-harm { border-left: 3px solid var(--c-rose); padding-left: 9px; }
 </style>

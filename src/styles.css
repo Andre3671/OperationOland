@@ -1,60 +1,211 @@
+/* ===================================================================
+   DESIGN TOKENS
+   Mirrors src/theme.js (the PrimeVue preset). PrimeVue components read
+   the preset; everything hand-built — compass, maps, overlays, role
+   cards — reads the variables below. Change both together.
+
+   Dark mode is the .app-dark class on <html>, set by lib/theme.js.
+   =================================================================== */
 :root{
-  --bg: #1a1a1a;
-  --neon: #00ff00;
-  --warn: #ff0000;
+  /* radii — the rounded look */
+  --r-xs: 6px;
+  --r-sm: 10px;
+  --r-md: 14px;
+  --r-lg: 20px;
+  --r-xl: 26px;
+  --r-pill: 999px;
+
+  /* accents, shared across both schemes */
+  --c-cyan:  #38bdf8;
+  --c-violet:#a78bfa;
+  --c-lime:  #4ade80;
+  --c-amber: #fbbf24;
+  --c-rose:  #fb7185;
+
+  /* '<Name> Variable' is the family @fontsource-variable registers — the plain
+     name is kept as a fallback for anyone who has the font installed locally. */
+  --font: 'Inter Variable', 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  /* Monospace is now for codes, coordinates and timers only — not body text. */
+  --font-mono: 'JetBrains Mono Variable', 'JetBrains Mono', ui-monospace, 'Courier New', monospace;
+
+  /* LIGHT (default) */
+  --bg:        #eef2fb;
+  --surface:   #ffffff;
+  --surface-2: #f6f8fd;
+  --surface-3: #eef2fa;
+  --border:    #e4e9f4;
+  --text:      #16203a;
+  --text-2:    #5a6785;
+  --text-3:    #93a0bb;
+  --primary:   #4f7cff;
+  --primary-soft: #e9efff;
+  --on-primary:#ffffff;
+
+  --shadow-sm: 0 2px 8px rgba(8,15,35,.06);
+  --shadow-md: 0 8px 28px rgba(8,15,35,.10);
+  --shadow-lg: 0 18px 46px rgba(8,15,35,.16);
+
+  /* Legacy aliases. The old terminal palette is referenced by name in a lot
+     of not-yet-ported components; these keep them rendering sanely until each
+     screen is rebuilt. Do NOT use them in new code. */
+  --neon: var(--primary);
+  --warn: var(--c-rose);
   --muted: rgba(0,0,0,0.6);
 }
+
+.app-dark{
+  --bg:        #0d1220;
+  --surface:   #161d33;
+  --surface-2: #111829;
+  --surface-3: #1c2440;
+  --border:    #26304d;
+  --text:      #f2f5ff;
+  --text-2:    #9aa6c6;
+  --text-3:    #66739a;
+  --primary:   #6d94ff;
+  --primary-soft: #22305a;
+  --on-primary:#0b1020;
+
+  --shadow-sm: 0 2px 8px rgba(0,0,0,.35);
+  --shadow-md: 0 8px 28px rgba(0,0,0,.5);
+  --shadow-lg: 0 18px 46px rgba(0,0,0,.6);
+}
+
+/* ===================================================================
+   RESPONSIVE PRIMITIVES
+
+   Players run this on their own devices, and a fair share of those are
+   tablets — held in either orientation, sometimes wedged on a dashboard.
+   Two rules follow from that:
+
+   1. Nothing full-bleed. A card that fills a 5" phone edge-to-edge is a
+      3-metre-wide smear on a 12" tablet. Overlays centre inside
+      --panel-max instead of stretching.
+   2. Landscape is not just "wide portrait". On a short, wide screen the
+      bottom sheet eats the map, so the mission panel moves to a side
+      rail. That's the .is-landscape hook below.
+   =================================================================== */
+:root{
+  --panel-max: 520px;   /* gates, briefings, role cards, checkpoints */
+  --sheet-max: 720px;   /* the navigator's mission sheet */
+  --rail-w:    360px;   /* mission panel when it becomes a side rail */
+  --tap-min:   44px;    /* minimum touch target */
+}
+
+/* Tablets: a touch more room, and bigger type — these are viewed at
+   arm's length on a dashboard, not 30 cm from your face. */
+@media (min-width: 700px){
+  :root{
+    --panel-max: 560px;
+    --sheet-max: 780px;
+  }
+}
+
+/* Short and wide — phone in landscape, or any tablet on its side.
+   Vertical space is the scarce resource here. */
+@media (orientation: landscape) and (max-height: 560px){
+  :root{ --panel-max: 640px; }
+}
+
+/* Utility used by the player overlays. */
+.oo-centre{
+  display:flex;
+  align-items:center;
+  justify-content:safe center;
+  padding:20px;
+  box-sizing:border-box;
+  overflow-y:auto;
+}
+.oo-panel{
+  width:100%;
+  max-width:var(--panel-max);
+  margin:auto;
+  box-sizing:border-box;
+}
+
 html,body,#app{height:100%;}
 body{
   margin:0;
   background:var(--bg);
-  color:var(--neon);
-  font-family: "Courier New", monospace;
+  color:var(--text);
+  font-family: var(--font);
+  -webkit-font-smoothing:antialiased;
+  transition: background-color .25s ease, color .25s ease;
 }
 .app-header{
-  position:fixed;top:0;left:0;right:0;height:56px;display:flex;align-items:center;gap:12px;padding:8px 12px;background:rgba(10,10,10,0.7);backdrop-filter:blur(2px);z-index:1000;border-bottom:1px solid rgba(0,255,0,0.08);
+  position:fixed;
+  top:calc(10px + env(safe-area-inset-top));
+  left:10px; right:10px;
+  height:auto; min-height:52px;
+  display:flex; align-items:center; gap:12px;
+  padding:8px 12px;
+  z-index:1000;
+  background:color-mix(in srgb, var(--surface) 90%, transparent);
+  backdrop-filter:blur(14px);
+  border:1px solid var(--border);
+  border-radius:var(--r-lg);
+  box-shadow:var(--shadow-md);
+  color:var(--text);
+}
+/* Tablets: keep the bar from stretching the full width of a 12" screen. */
+@media (min-width:900px){
+  .app-header{ left:50%; right:auto; transform:translateX(-50%); width:min(860px, calc(100% - 24px)); }
 }
 .header-left{display:flex;align-items:center;gap:10px}
-.title{font-weight:700}
-.status-dot{width:12px;height:12px;border-radius:50%;background:var(--neon);box-shadow:0 0 6px var(--neon);animation:pulse 1.6s infinite}
+.title{
+  font-weight:800;
+  font-size:0.82rem;
+  letter-spacing:-0.01em;
+  color:var(--text);
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
+}
+.status-dot{
+  width:10px;height:10px;border-radius:50%;
+  background:var(--c-lime);
+  box-shadow:0 0 0 4px color-mix(in srgb, var(--c-lime) 22%, transparent);
+  animation:pulse 1.6s infinite;
+  flex:none;
+}
+.status-dot.gps-down{
+  background:var(--c-rose);
+  box-shadow:0 0 0 4px color-mix(in srgb, var(--c-rose) 22%, transparent);
+}
 @keyframes pulse{0%{transform:scale(1)}50%{transform:scale(1.25)}100%{transform:scale(1)}}
 .map-container{position:fixed;inset:0;z-index:1}
-.compass{position:fixed;right:12px;top:72px;z-index:900;width:108px;height:108px;pointer-events:none;display:flex;flex-direction:column;align-items:center;gap:6px;padding:6px;background:radial-gradient(circle at center, rgba(0,0,0,0.85) 55%, rgba(0,0,0,0.55) 100%);border:1px solid rgba(0,255,0,0.45);border-radius:50%;box-shadow:0 0 12px rgba(0,255,0,0.25), inset 0 0 12px rgba(0,0,0,0.6);}
-.compass-shell{width:100%;height:100%;transition:transform 0.3s ease-out;transform-origin:center center;filter:drop-shadow(0 0 3px rgba(0,255,0,0.4));}
-.heading-label{position:absolute;left:50%;transform:translateX(-50%);bottom:-22px;font-size:11px;font-weight:700;color:var(--neon);letter-spacing:0.15em;text-transform:uppercase;text-align:center;text-shadow:0 0 6px rgba(0,0,0,0.95), 0 0 4px rgba(0,255,0,0.5);white-space:nowrap;}
-.admin-shell{display:flex;min-height:100vh;background:#111;color:var(--neon);}
-.admin-map{flex:3;position:relative;background:#0f0f0f;}
-.admin-leaflet-map{width:100%;height:100vh;}
-.admin-sidebar{flex:1;min-width:320px;padding:24px;border-left:1px solid rgba(0,255,0,0.12);background:rgba(10,10,10,0.95);overflow-y:auto;}
-.admin-topbar{display:flex;justify-content:space-between;align-items:center;padding:16px 24px;background:rgba(0,0,0,0.35);border-bottom:1px solid rgba(0,255,0,0.15);}
-.admin-title{font-size:1rem;font-weight:700;letter-spacing:0.3em;text-transform:uppercase;}
-.admin-controls{display:flex;gap:10px;}
-.refresh-btn,.debug-btn{padding:10px 16px;background:#111;border:1px solid #00ff00;color:var(--neon);font-family:inherit;cursor:pointer;border-radius:8px}
-.debug-btn.active{background:#00ff00;color:#000;}
+.compass{
+  position:fixed;
+  right:12px;
+  top:calc(72px + env(safe-area-inset-top));
+  z-index:900;
+  width:clamp(96px, 22vmin, 150px);
+  height:clamp(96px, 22vmin, 150px);
+  pointer-events:none;
+  display:flex; flex-direction:column; align-items:center; justify-content:center;
+  padding:6px;
+  background:color-mix(in srgb, var(--surface) 88%, transparent);
+  backdrop-filter:blur(10px);
+  border:1px solid var(--border);
+  border-radius:50%;
+  box-shadow:var(--shadow-md);
+}
+/* Side-rail layout: the mission panel occupies the right edge, so the compass
+   moves left to stay clear of it. */
+@media (orientation: landscape) and (max-height: 560px){
+  .compass{ right:auto; left:12px; top:calc(64px + env(safe-area-inset-top)); }
+}
+.compass-shell{width:100%;height:100%;transition:transform 0.3s ease-out;transform-origin:center center;filter:drop-shadow(0 2px 6px rgba(0,0,0,0.25));}
+.heading-label{position:absolute;left:50%;transform:translateX(-50%);bottom:-24px;font-family:var(--font-mono);font-size:11px;font-weight:700;color:var(--text-2);letter-spacing:0.12em;text-transform:uppercase;text-align:center;white-space:nowrap;}
 .admin-error{padding:24px;color:#ff4d4d;}
-.sidebar-header{margin-bottom:22px;}
-.debug-panel{margin-top:14px;padding:12px;background:rgba(0,255,0,0.06);border:1px solid rgba(0,255,0,0.15);border-radius:10px;}
-.debug-row{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:10px}
-.debug-row label{width:40px;font-size:0.85rem;color:#9ef19e;}
-.debug-row input{flex:1;padding:8px 10px;background:#111;border:1px solid rgba(0,255,0,0.15);color:var(--neon);border-radius:6px;font-family:inherit;}
-.debug-update-btn{width:100%;margin-top:8px;padding:10px 12px;background:#111;border:1px solid rgba(0,255,0,0.15);color:var(--neon);cursor:pointer;border-radius:8px;text-transform:uppercase;}
-.sidebar-title{font-size:1.1rem;font-weight:700;letter-spacing:0.2em;text-transform:uppercase;}
-.sidebar-subtitle{margin-top:8px;opacity:0.75;line-height:1.5;}
-.team-card{margin-bottom:18px;padding:18px;background:rgba(0,0,0,0.35);border:1px solid rgba(0,255,0,0.12);border-radius:14px;}
-.team-card-title{font-size:1rem;font-weight:700;margin-bottom:14px;}
-.team-row{display:flex;justify-content:space-between;padding:8px 0;border-top:1px solid rgba(0,255,0,0.08);}
-.team-row:first-of-type{border-top:none;}
-.status-ok{color:#00ff00;}
-.status-alert{color:#ffb400;}
-.status-warn{color:#ff0000;}
-.live-tooltip{color:#00ff00 !important; background:rgba(0,0,0,0.75) !important; border:none !important; font-family: inherit !important;}
+.live-tooltip{color:var(--text) !important; background:var(--surface) !important; border:1px solid var(--border) !important; border-radius:var(--r-sm) !important; font-family:var(--font) !important; box-shadow:var(--shadow-md) !important;}
 .overlay-full{
   position:fixed;inset:0;display:flex;align-items:center;justify-content:safe center;flex-direction:column;padding:24px;z-index:2000;color:#000;
   box-sizing:border-box;overflow-y:auto;
 }
 .overlay-red{background:var(--warn);color:#fff}
 .overlay-green{background:var(--neon);color:#000}
-.mission-btn{margin-top:18px;padding:14px 20px;background:#111;border:2px solid rgba(0,0,0,0.2);color:var(--neon);font-weight:700;border-radius:8px}
+.mission-btn{margin-top:18px;padding:14px 24px;background:var(--surface);border:1px solid var(--border);color:var(--text);font-family:var(--font);font-weight:700;border-radius:var(--r-pill);cursor:pointer;box-shadow:var(--shadow-sm);}
 .team-picker .mission-btn{min-width:110px}
 .compass img{width:100%;height:100%;display:block;}
 
@@ -107,6 +258,35 @@ body{
   border:3px solid #fff;
   box-shadow:0 0 10px var(--own-color, #00ccff);
 }
+
+/* SPANING (joker support): rival teams revealed for 60 s. Deliberately a
+   different shape from the team's own dot and the target marker — at a glance
+   in a moving car nobody should confuse "them" with "us" or "the goal". */
+.rival-pos-marker{
+  position:relative;
+  width:22px;height:22px;
+  display:flex;align-items:center;justify-content:center;
+}
+.rival-pos-dot{
+  width:14px;height:14px;
+  background:var(--rival-color, #888);
+  border:2px solid #fff;
+  /* squared-off diamond vs. the round own-position dot */
+  transform:rotate(45deg);
+  box-shadow:0 2px 6px rgba(0,0,0,0.45);
+}
+.rival-tooltip{
+  background:rgba(0,0,0,0.72) !important;
+  color:#fff !important;
+  border:none !important;
+  border-radius:var(--r-pill) !important;
+  font-family:var(--font) !important;
+  font-size:10px !important;
+  font-weight:700 !important;
+  padding:2px 8px !important;
+  box-shadow:none !important;
+}
+.rival-tooltip::before{ display:none !important; }
 
 /* Navigator: manual pins (tap to place, long-press to remove) */
 .manual-pin{

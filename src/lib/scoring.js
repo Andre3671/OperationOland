@@ -68,16 +68,31 @@ export function computeTeamScore(team, state) {
     Math.floor((cheat.seconds || 0) / 30) * SCORING.cheatPer30s
   )
 
-  // Sabotage cost: every ability the team's saboteur fired burned points
-  // from THIS team's total. The cost per use is recorded server-side on the
-  // sabotage log entry, so old operations without the field score 0.
+  // Joker cost: every ability the team's joker fired — supporting the team or
+  // hitting another — burned points from THIS team's total. The cost per use
+  // is recorded server-side on the log entry, so old operations without the
+  // field score 0.
   breakdown.sabotagePenalty = -(state.sabotageLog || [])
     .filter(e => e && e.byTeam === team)
     .reduce((sum, e) => sum + (Number(e.cost) || 0), 0)
 
-  // Scores never go below zero — cheating can eat the earned points but a
-  // team should always see a plus score, not a growing minus.
-  const total = Math.max(0, Object.values(breakdown).reduce((sum, v) => sum + v, 0))
+  // Two different floors, on purpose.
+  //
+  // Cheating bottoms out at zero: getting caught should hurt, but a team
+  // that's already lost everything shouldn't keep sinking into a spiral they
+  // can't climb out of.
+  //
+  // Joker spending does NOT bottom out. A single team's joker can spend up to
+  // 250 points across all charges, which is more than a short route pays out —
+  // so with a floor at zero, a team sitting at 0 could fire every remaining
+  // charge for free. That turned "spend your team's points" into "spend
+  // nothing" exactly when a losing team had the least reason to hold back.
+  // Letting the total go negative keeps the cost real all the way down.
+  const earnedAfterCheating = Math.max(
+    0,
+    breakdown.arrival + breakdown.missionComplete + breakdown.meetingBonus + breakdown.cheatPenalty
+  )
+  const total = earnedAfterCheating + breakdown.sabotagePenalty
 
   return {
     team,

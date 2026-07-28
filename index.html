@@ -1,10 +1,17 @@
 <!doctype html>
 <html lang="sv">
   <head>
-    <link rel="icon" type="image/png" href="/icon.png" />
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>Operation Roadtrip</title>
+
+    <!-- SVG first: stays crisp on any display and follows the browser's own
+         scaling. The PNG is the fallback for anything that can't do SVG icons. -->
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="icon" type="image/png" href="/icon.png" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <meta name="theme-color" content="#4f7cff" />
+    <meta name="description" content="Ett hemligt fältuppdrag för dig och ditt lag. Kompass, karta och klassificerade mål — spelet spelas i verkligheten." />
   </head>
   <body>
     <div id="app"></div>

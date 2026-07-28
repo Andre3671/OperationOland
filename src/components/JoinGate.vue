@@ -1,10 +1,6 @@
 <template>
   <div class="join-overlay">
     <div class="join-frame">
-      <div class="corner top-left"></div>
-      <div class="corner top-right"></div>
-      <div class="corner bottom-left"></div>
-      <div class="corner bottom-right"></div>
 
       <div class="signal-status">
         <span class="signal-dot"></span>
@@ -97,13 +93,13 @@ async function submit() {
 .join-overlay {
   position: fixed;
   inset: 0;
-  background: #0a0a0a;
+  background: var(--bg);
   display: flex;
   align-items: center;
   justify-content: safe center;
   z-index: 2200;
-  font-family: 'JetBrains Mono', 'Courier New', monospace;
-  color: #00ccff;
+  font-family: 'JetBrains Mono', var(--font-mono);
+  color: var(--primary);
   padding: 20px;
   overflow: auto;
 }
@@ -114,8 +110,8 @@ async function submit() {
   inset: 0;
   background: repeating-linear-gradient(
     0deg,
-    rgba(0, 204, 255, 0.025) 0px,
-    rgba(0, 204, 255, 0.025) 1px,
+    color-mix(in srgb, var(--primary) 18%, transparent) 0px,
+    color-mix(in srgb, var(--primary) 18%, transparent) 1px,
     transparent 1px,
     transparent 3px
   );
@@ -125,24 +121,16 @@ async function submit() {
 .join-frame {
   position: relative;
   width: 100%;
-  max-width: 480px;
+  max-width: var(--panel-max);
   padding: 36px 28px;
-  background: rgba(0, 0, 0, 0.88);
-  border: 1px solid rgba(0, 204, 255, 0.3);
-  box-shadow: 0 0 60px rgba(0, 204, 255, 0.18), inset 0 0 30px rgba(0, 204, 255, 0.04);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-lg);
+  border-radius: var(--r-xl);
 }
 
-.corner {
-  position: absolute;
-  width: 16px;
-  height: 16px;
-  border: 2px solid #00ccff;
-  opacity: 0.8;
-}
-.top-left     { top: 6px;    left: 6px;    border-right: none;  border-bottom: none; }
-.top-right    { top: 6px;    right: 6px;   border-left: none;   border-bottom: none; }
-.bottom-left  { bottom: 6px; left: 6px;    border-right: none;  border-top: none; }
-.bottom-right { bottom: 6px; right: 6px;   border-left: none;   border-top: none; }
+.corner { display: none; }
+
 
 .signal-status {
   font-size: 0.7rem;
@@ -186,7 +174,7 @@ async function submit() {
   font-size: clamp(1.4rem, 6vw, 1.8rem);
   font-weight: 900;
   letter-spacing: 0.1em;
-  text-shadow: 0 0 14px rgba(0, 204, 255, 0.45);
+  text-shadow: 0 0 14px color-mix(in srgb, var(--primary) 18%, transparent);
 }
 
 .gate-title {
@@ -194,12 +182,12 @@ async function submit() {
   font-weight: 800;
   letter-spacing: 0.18em;
   margin: 0 0 8px;
-  color: #00ccff;
+  color: var(--primary);
 }
 
 .gate-hint {
   font-size: 0.78rem;
-  color: #999;
+  color: var(--text-2);
   margin: 0 0 22px;
   line-height: 1.45;
 }
@@ -215,8 +203,8 @@ async function submit() {
   width: 100%;
   box-sizing: border-box;
   background: #000;
-  border: 1px solid rgba(0, 204, 255, 0.45);
-  color: #fff;
+  border: 1px solid color-mix(in srgb, var(--primary) 18%, transparent);
+  color: var(--text);
   font-family: inherit;
   font-size: clamp(1.6rem, 9vw, 2.2rem);
   font-weight: 800;
@@ -230,8 +218,8 @@ async function submit() {
 }
 
 .code-input:focus {
-  border-color: #00ccff;
-  box-shadow: 0 0 18px rgba(0, 204, 255, 0.35);
+  border-color: var(--primary);
+  box-shadow: 0 0 18px color-mix(in srgb, var(--primary) 18%, transparent);
 }
 
 .code-input::placeholder {
@@ -242,8 +230,8 @@ async function submit() {
 .join-btn {
   width: 100%;
   background: transparent;
-  border: 1px solid #00ccff;
-  color: #00ccff;
+  border: 1px solid var(--primary);
+  color: var(--primary);
   padding: 15px;
   font-family: inherit;
   font-weight: 700;
@@ -254,9 +242,9 @@ async function submit() {
 }
 
 .join-btn:hover:not(:disabled) {
-  background: #00ccff;
+  background: var(--primary);
   color: #000;
-  box-shadow: 0 0 24px rgba(0, 204, 255, 0.65);
+  box-shadow: 0 0 24px color-mix(in srgb, var(--primary) 18%, transparent);
 }
 
 .join-btn:disabled {
@@ -278,13 +266,13 @@ async function submit() {
 }
 
 .err-icon {
-  color: #ff3333;
+  color: var(--c-rose);
   font-weight: 900;
 }
 
 .scanner-line {
   height: 1px;
-  background: rgba(0, 204, 255, 0.18);
+  background: color-mix(in srgb, var(--primary) 18%, transparent);
   position: relative;
   overflow: hidden;
   margin-bottom: 14px;
@@ -297,8 +285,8 @@ async function submit() {
   left: 0;
   width: 50px;
   height: 100%;
-  background: #00ccff;
-  box-shadow: 0 0 8px #00ccff;
+  background: var(--primary);
+  box-shadow: 0 0 8px var(--primary);
   animation: scan 2.6s linear infinite;
 }
 
@@ -312,7 +300,7 @@ async function submit() {
   justify-content: space-between;
   font-size: 0.65rem;
   letter-spacing: 0.12em;
-  color: #555;
+  color: var(--text-3);
   font-variant-numeric: tabular-nums;
 }
 </style>

@@ -223,8 +223,6 @@ export const api = {
   // Role reveal (game mode): the player looks up their own roster name in a
   // team → 'agent' or 'sabotor' (+ the saboteur's secret missions).
   fetchRole: (team, name) => postJson('/api/role', { team, name }),
-  markSabotageDone: (team, name, missionId) =>
-    postJson('/api/sabotage-done', { team, name, missionId }),
   // Fire a sabotage ability at another team (saboteur only; server enforces
   // identity, charges and cooldown).
   useSabotageAbility: (team, name, type, targetTeam) =>

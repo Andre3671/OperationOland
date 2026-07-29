@@ -106,17 +106,12 @@ function defaultState() {
     // the admin's create-operation flow (random distribution or manual);
     // empty means "no roster set".
     teamRosters: emptyMap(() => []),
-    // Secret saboteur missions (game mode): [{ id, team, targetTeam, text,
-    // done, doneAt }]. `team` is the saboteur's OWN slot; `targetTeam` is the
-    // team the prank targets. Created/edited by the admin, revealed in the
-    // results. Completions are logged only — no automatic penalties; the
-    // game leader decides consequences.
-    sabotageMissions: [],
-    // ACTIVE sabotage effects (game mode): digital abilities a saboteur fires
-    // from their own phone at another team's navigator device.
-    // [{ id, type, targetTeam, byTeam, params, createdAt, expiresAt }].
-    // Expired entries are pruned lazily on every commit; the victim client
-    // renders whatever is active for its team.
+    // ACTIVE joker effects (game mode): digital abilities a saboteur fires
+    // from their own phone — either at another team's navigator device or at
+    // their own team.
+    // [{ id, type, direction, targetTeam, byTeam, params, createdAt,
+    // expiresAt }]. `direction` is 'self' (supporting the joker's own team)
+    // or 'enemy'. Expired entries are pruned lazily on every commit.
     sabotageEffects: [],
     // Permanent log of every ability use: [{ id, type, byTeam, byName,
     // targetTeam, at }]. Doubles as the charge/cooldown ledger (charges left
@@ -716,7 +711,7 @@ app.post('/api/admin/patch', requireAdmin, (req, res) => {
     'idealRoadPaths', 'teams', 'teamProgress', 'teamCheating',
     'arrivalLog', 'chatMessages', 'isSimulationMode', 'isOperationActive',
     'history', 'operationStartTime', 'meetingPointTime',
-    'teamStartTimes', 'teamRosters', 'mode', 'sabotageMissions',
+    'teamStartTimes', 'teamRosters', 'mode',
     'sabotageEffects', 'sabotageLog',
   ]
   const next = { ...getOpState(op.id) }
@@ -1079,46 +1074,9 @@ app.post('/api/role', (req, res) => {
     return res.status(404).json({ error: 'namnet finns inte i det lagets laguppställning — kontrollera stavningen eller fråga spelledningen' })
   }
   const isSaboteur = entry.role === 'sabotor'
-  // Saboteurs get their own missions (targeting OTHER teams). Agents get
-  // nothing extra — not even a hint that missions exist.
-  const missions = isSaboteur
-    ? (state.sabotageMissions || [])
-        .filter(m => m && m.team === key)
-        .map(m => ({
-          id: m.id,
-          targetTeam: m.targetTeam,
-          targetTeamName: state.teams[m.targetTeam]?.name || (m.targetTeam || '').toUpperCase(),
-          text: m.text,
-          done: !!m.done,
-          doneAt: m.doneAt || null,
-        }))
-    : []
-  res.json({ role: isSaboteur ? 'sabotor' : 'agent', missions })
+  res.json({ role: isSaboteur ? 'sabotor' : 'agent' })
 })
 
-// Saboteur marks one of their own missions as completed. Logged for the
-// admin (results reveal) — no automatic penalties for the target team.
-app.post('/api/sabotage-done', (req, res) => {
-  const ctx = resolvePlayerOp(req)
-  if (ctx.error) return res.status(ctx.error).json({ error: ctx.message })
-  const state = getOpState(ctx.op.id)
-  const key = (req.body?.team || '').toString().toLowerCase()
-  const name = (req.body?.name || '').toString().trim()
-  const missionId = req.body?.missionId
-  if (!state.teams[key]) return res.status(404).json({ error: 'laget finns inte' })
-  const entry = findRosterEntry(state, key, name)
-  if (!entry || entry.role !== 'sabotor') {
-    return res.status(403).json({ error: 'endast lagets sabotör kan bekräfta sabotage-uppdrag' })
-  }
-  const idx = (state.sabotageMissions || []).findIndex(m => m && m.id === missionId && m.team === key)
-  if (idx === -1) return res.status(404).json({ error: 'uppdraget finns inte' })
-  const mission = state.sabotageMissions[idx]
-  if (mission.done) return res.json({ ok: true, deduped: true, doneAt: mission.doneAt })
-  const nextMissions = state.sabotageMissions.slice()
-  nextMissions[idx] = { ...mission, done: true, doneAt: Date.now() }
-  commitOp(ctx.op.id, { ...state, sabotageMissions: nextMissions })
-  res.json({ ok: true, doneAt: nextMissions[idx].doneAt })
-})
 
 // Fire a sabotage ability at another team's navigator device. Server
 // enforces: game mode only, saboteur identity (roster name + role), per-

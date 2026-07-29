@@ -217,7 +217,7 @@
               </div>
             </div>
             <div class="scoring-legend">
-              +{{ SCORING.arrival }} ankomst · +{{ SCORING.missionComplete }} uppdrag slutfört · +{{ SCORING.meetingBonus }} gemensamt (återsamling) · −{{ SCORING.cheatOffense }} per fusk + −{{ SCORING.cheatPer30s }} / 30s<template v-if="mode === 'game'"> · sabotage kostar 10–25 p av eget lags poäng</template> · snabbast tid avgör vid lika poäng
+              +{{ SCORING.arrival }} ankomst · +{{ SCORING.missionComplete }} uppdrag slutfört · +{{ SCORING.meetingBonus }} gemensamt (återsamling) · −{{ SCORING.cheatOffense }} per fusk + −{{ SCORING.cheatPer30s }} / 30s<template v-if="mode === 'game'"> · jokerförmågor kostar 10–25 p av eget lags poäng</template> · snabbast tid avgör vid lika poäng
             </div>
           </div>
         </div>
@@ -554,7 +554,7 @@
       </section>
 
       <section v-show="activeTab === 'joker'" class="tab-pane">
-        <!-- Sabotage: live ability log + secret text missions (game mode) -->
+        <!-- Joker: live ability log (game mode) -->
         <div class="meeting-section" v-if="mode === 'game'">
           <div class="section-title">JOKER</div>
 
@@ -599,43 +599,6 @@
             </div>
           </div>
 
-          <!-- Optional secret text missions per saboteur -->
-          <div v-if="saboteurTeams.length" class="sab-missions-block">
-            <div class="section-title" style="font-size: 0.7rem; margin: 14px 0 8px;">HEMLIGA UPPDRAG (TEXT)</div>
-            <div v-for="key in saboteurTeams" :key="key" class="sab-team-block">
-              <div class="roster-team-name" :style="{ color: TEAM_COLORS[key] }">
-                {{ teamDisplay(key) }} — sabotör: {{ saboteurNameOf(key) }}
-              </div>
-              <div v-for="m in missionsFor(key)" :key="m.id" class="sab-mission-row" :class="{ 'is-done': m.done }">
-                <span class="sab-mission-status">{{ m.done ? '✓' : '○' }}</span>
-                <span class="sab-mission-text">
-                  mot <b :style="{ color: TEAM_COLORS[m.targetTeam] }">{{ teamDisplay(m.targetTeam) }}</b>: {{ m.text }}
-                  <span v-if="m.done && m.doneAt" class="sab-mission-time">({{ formatTime(m.doneAt) }})</span>
-                </span>
-                <button class="kick-btn" @click="removeMission(m.id)" title="Ta bort uppdraget">✕</button>
-              </div>
-              <div class="sab-mission-add">
-                <select v-model="missionDrafts[key].targetTeam" class="checkpoint-input sab-target-select">
-                  <option disabled value="">Mållag…</option>
-                  <option v-for="t in missionTargetsFor(key)" :key="t.key" :value="t.key">{{ t.name }}</option>
-                </select>
-                <input
-                  v-model="missionDrafts[key].text"
-                  class="checkpoint-input"
-                  placeholder="Uppdragstext (ofarligt partybus!)"
-                  maxlength="300"
-                  @keyup.enter="addMission(key)"
-                />
-                <button class="add-btn" :disabled="!missionDrafts[key].targetTeam || !missionDrafts[key].text.trim()" @click="addMission(key)">+</button>
-              </div>
-            </div>
-            <button class="add-btn" style="margin-top: 8px; width: 100%;" @click="randomizeMissions" title="Lägger till 2 slumpade uppdrag ur standardpoolen per sabotör (endast ofarliga sociala bus)">
-              🎲 SLUMPA UPPDRAG
-            </button>
-          </div>
-          <div v-else class="gen-hint">
-            Utse sabotörer i LAGINDELNING ovan för att kunna lägga hemliga text-uppdrag.
-          </div>
         </div>
 
 
@@ -762,7 +725,6 @@ import { authMe, authLogin, authRegister, authLogout, setAdminToken, api } from 
 import { SLOT_DEFS, SLOT_KEYS, MAX_TEAMS } from '../lib/teamSlots'
 import { computeLeaderboard, SCORING } from '../lib/scoring'
 import { ABILITY_LABELS } from '../lib/sabotageAbilities'
-import { randomSabotageMissions } from '../lib/sabotageMissions'
 
 const {
   teamSummaries,
@@ -805,7 +767,6 @@ const {
   configureSlots,
   teamRosters,
   mode,
-  sabotageMissions,
   sabotageEffects,
   sabotageLog,
   operationsList,
@@ -875,7 +836,7 @@ function randomizeSaboteurs() {
   teamRosters.value = next
 }
 
-// ---- sabotage log + text mission editor ----
+// ---- joker ability log ----
 
 const teamDisplay = (key) => teams.value[key]?.name || (key || '').toUpperCase()
 const abilityLabel = (type) => ABILITY_LABELS[type] || type
@@ -902,52 +863,11 @@ const rosterTeams = computed(() =>
 
 const saboteurTeams = computed(() => rosterTeams.value.filter(key => saboteurNameOf(key)))
 
-function missionsFor(key) {
-  return sabotageMissions.value.filter(m => m && m.team === key)
-}
 
-function missionTargetsFor(key) {
-  return SLOT_KEYS
-    .filter(k => k !== key && teams.value[k]?.enabled)
-    .map(k => ({ key: k, name: teamDisplay(k) }))
-}
 
-// Per-saboteur add-mission drafts. Keys are created lazily as saboteurs
-// appear so the template can bind v-model without guards.
-const missionDrafts = reactive({})
-watch(saboteurTeams, (keys) => {
-  for (const key of keys) {
-    if (!missionDrafts[key]) missionDrafts[key] = { targetTeam: '', text: '' }
-  }
-}, { immediate: true })
 
-function addMission(team) {
-  const draft = missionDrafts[team]
-  if (!draft?.targetTeam || !draft.text.trim()) return
-  sabotageMissions.value = [...sabotageMissions.value, {
-    id: `sab-${team}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-    team,
-    targetTeam: draft.targetTeam,
-    text: draft.text.trim(),
-    done: false,
-    doneAt: null,
-  }]
-  draft.text = ''
-}
 
-function removeMission(id) {
-  sabotageMissions.value = sabotageMissions.value.filter(m => m.id !== id)
-}
 
-// 2 random missions from the default pool per saboteur (harmless social
-// pranks only — see src/lib/sabotageMissions.js).
-function randomizeMissions() {
-  const additions = []
-  for (const key of saboteurTeams.value) {
-    additions.push(...randomSabotageMissions(key, missionTargetsFor(key), 2))
-  }
-  if (additions.length) sabotageMissions.value = [...sabotageMissions.value, ...additions]
-}
 
 // ---- account auth ----
 //
@@ -2310,53 +2230,7 @@ const toggleSharedSimulation = () => {
   font-weight: 800;
 }
 
-.sab-team-block {
-  margin-bottom: 14px;
-}
 
-.sab-mission-row {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  padding: 6px 8px;
-  border: 1px dashed rgba(255, 85, 102, 0.35);
-  background: rgba(255, 85, 102, 0.04);
-  margin-bottom: 6px;
-  font-size: 0.74rem;
-  line-height: 1.4;
-  color: var(--text-2);
-}
-
-.sab-mission-row.is-done {
-  border-color: rgba(0, 255, 136, 0.35);
-  background: rgba(0, 255, 136, 0.04);
-}
-
-.sab-mission-status {
-  flex: 0 0 auto;
-  font-weight: 800;
-  color: #ff8896;
-}
-
-.sab-mission-row.is-done .sab-mission-status { color: #00ff88; }
-
-.sab-mission-text { flex: 1; min-width: 0; overflow-wrap: anywhere; }
-
-.sab-mission-time { color: #888; font-size: 0.66rem; }
-
-.sab-mission-add {
-  display: flex;
-  gap: 6px;
-  margin-top: 4px;
-}
-
-.sab-mission-add .checkpoint-input { min-width: 0; }
-
-.sab-target-select {
-  flex: 0 0 110px;
-  padding: 6px;
-  font-size: 0.72rem;
-}
 
 .op-modal-backdrop {
   position: fixed;

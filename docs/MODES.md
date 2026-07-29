@@ -7,8 +7,7 @@ hamnar automatiskt i rätt läge via anslutningskoden.
 
 > **VIKTIGT:** Servern måste **omdeployas** (`npm run deploy`) innan de nya
 > appbyggena används — mode/roller/sabotage kräver de nya fälten i
-> state-blobben och endpoints (`/api/role`, `/api/sabotage-done`,
-> `/api/sabotage-ability`) som äldre serverversioner saknar.
+> state-blobben och endpoints (`/api/role`, `/api/sabotage-ability`) som äldre serverversioner saknar.
 
 ## SPEL (game) — standardläget
 
@@ -84,29 +83,18 @@ Efter anslutningskoden väljer varje mobil en **enhetsroll**:
 - Spelledaren ser allt live i admin-sektionen **SABOTAGE** (vem, vad, mot vem,
   kostnad, pågår nu).
 
-### Hemliga text-uppdrag (frivilligt extra)
-
-Utöver förmågorna kan spelledaren ge sabotörerna klassiska text-uppdrag
-(sektionen **HEMLIGA UPPDRAG** under SABOTAGE): mållag + text, eller
-**🎲 SLUMPA UPPDRAG** ur standardpoolen — **endast ofarliga, lagliga
-party-bus** (sociala/kreativa uppgifter; aldrig något som rör fordon,
-trafiksäkerhet, stöld eller skadegörelse). Sabotören bockar av
-**GENOMFÖRT** på sin mobil; inga automatiska straff — spelledaren avgör.
 
 ## STORA AVSLÖJANDET
 
 I **RESULTAT**-vyn finns panelen **🎭 STORA AVSLÖJANDET**: per lag visas vem
-sabotören var, varje förmåga de använde (klockslag, mål, poängkostnad) och
-vilka text-uppdrag som genomfördes. Visa den för alla lag samtidigt när
+sabotören var, varje förmåga de använde (klockslag, mål, poängkostnad) . Visa den för alla lag samtidigt när
 resan är slut.
 
 ## Tekniskt (för framtida underhåll)
 
-- Nya fält i state-blobben: `mode`, `teamRosters[].role`, `sabotageMissions`,
-  `sabotageEffects` (aktiva, rensas automatiskt vid utgång), `sabotageLog`
+- Nya fält i state-blobben: `mode`, `teamRosters[].role`, `sabotageEffects` (aktiva, rensas automatiskt vid utgång), `sabotageLog`
   (permanent logg = laddnings-/nedkylnings-/kostnadsbokföring).
 - Nya spelar-endpoints (join-kodsscopade): `POST /api/role`,
-  `POST /api/sabotage-done`, `POST /api/sabotage-ability`.
+  `POST /api/sabotage-ability`.
 - Förmågekatalogen är handsynkad mellan `server/src/index.js`
   (`SABOTAGE_ABILITIES`) och `src/lib/sabotageAbilities.js` — ändra båda.
-- Standardpoolen för text-uppdrag: `src/lib/sabotageMissions.js`.

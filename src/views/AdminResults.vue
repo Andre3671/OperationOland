@@ -88,9 +88,6 @@
         </div>
       </div>
 
-      <!-- STORA AVSLÖJANDET: who was each team's saboteur, what they fired
-           at whom (with timestamps and point costs) and which text missions
-           they completed. Game mode only. -->
       <div v-if="showReveal" class="reveal-panel">
         <div class="reveal-title">🎭 STORA AVSLÖJANDET</div>
         <div class="reveal-sub">Sabotörerna och allt de gjorde — visa denna för alla lag samtidigt.</div>
@@ -112,15 +109,8 @@
             </div>
           </div>
 
-          <div v-if="row.missions.length" class="reveal-list">
-            <div v-for="m in row.missions" :key="m.id" class="reveal-row" :class="{ 'is-pending': !m.done }">
-              <span class="reveal-time">{{ m.done ? formatClock(m.doneAt) : '—' }}</span>
-              <span class="reveal-what">{{ m.done ? '✓' : '○' }} uppdrag mot <b>{{ teamDisplay(m.targetTeam) }}</b>: {{ m.text }}</span>
-            </div>
-          </div>
-
-          <div v-if="!row.abilityUses.length && !row.missions.length" class="reveal-quiet">
-            {{ row.saboteur ? 'Sabotören låg lågt hela resan…' : 'Inget att avslöja.' }}
+          <div v-if="!row.abilityUses.length" class="reveal-quiet">
+            {{ row.saboteur ? 'Jokern låg lågt hela resan…' : 'Inget att avslöja.' }}
           </div>
         </div>
       </div>
@@ -144,7 +134,6 @@ const {
   operationStartTime,
   teamStartTimes,
   teamRosters,
-  sabotageMissions,
   sabotageLog,
   mode,
 } = useSimulationStore()
@@ -302,14 +291,12 @@ const revealRows = computed(() =>
     const abilityUses = (sabotageLog.value || [])
       .filter(e => e && e.byTeam === key)
       .sort((a, b) => a.at - b.at)
-    const missions = (sabotageMissions.value || []).filter(m => m && m.team === key)
     return {
       team: key,
       displayName: name || key.toUpperCase(),
       color: color || '#888',
       saboteur,
       abilityUses,
-      missions,
       totalCost: abilityUses.reduce((sum, e) => sum + (Number(e.cost) || 0), 0),
     }
   })
@@ -317,7 +304,7 @@ const revealRows = computed(() =>
 
 const showReveal = computed(() =>
   mode.value === 'game' &&
-  revealRows.value.some(r => r.saboteur || r.abilityUses.length || r.missions.length)
+  revealRows.value.some(r => r.saboteur || r.abilityUses.length)
 )
 </script>
 

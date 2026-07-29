@@ -140,20 +140,6 @@
             <div v-if="fireResult" class="fx-fired" :class="{ 'is-blocked': fireBlocked }">{{ fireResult }}</div>
           </div>
 
-          <!-- Optional text missions -->
-          <template v-if="missions.length">
-            <div class="sab-console-title" style="margin-top: 14px;">HEMLIGA UPPDRAG</div>
-            <div v-for="m in missions" :key="m.id" class="mission-card" :class="{ 'is-done': m.done }">
-              <div class="mission-target">MÅL: {{ m.targetTeamName || m.targetTeam?.toUpperCase() }}</div>
-              <div class="mission-text">{{ m.text }}</div>
-              <div class="mission-foot">
-                <span v-if="m.done" class="mission-done-tag">✓ GENOMFÖRT {{ formatTime(m.doneAt) }}</span>
-                <button v-else class="mission-done-btn" :disabled="markingId === m.id" @click="markDone(m)">
-                  {{ markingId === m.id ? 'RAPPORTERAR…' : 'MARKERA GENOMFÖRT' }}
-                </button>
-              </div>
-            </div>
-          </template>
         </template>
 
         <template v-else>
@@ -217,8 +203,6 @@ const pickedName = ref('')
 const busy = ref(false)
 const error = ref('')
 const role = ref('')
-const missions = ref([])
-const markingId = ref(null)
 
 // Ability console state
 const targetTeam = ref('')
@@ -335,7 +319,6 @@ async function lookup() {
   try {
     const res = await api.fetchRole(pickedTeam.value, name)
     role.value = res?.role === 'sabotor' ? 'sabotor' : 'agent'
-    missions.value = Array.isArray(res?.missions) ? res.missions : []
     step.value = props.instantReveal ? 'reveal' : 'shield'
     emit('identified', { team: pickedTeam.value, name, role: role.value })
     if (props.standalone) {
@@ -357,7 +340,6 @@ function changeIdentity() {
     localStorage.removeItem(MEMBER_NAME_KEY)
   } catch (_) {}
   role.value = ''
-  missions.value = []
   pickedTeam.value = ''
   pickedName.value = ''
   targetTeam.value = ''
@@ -412,21 +394,6 @@ async function fireAbility(type) {
   }
 }
 
-async function markDone(mission) {
-  if (markingId.value) return
-  markingId.value = mission.id
-  error.value = ''
-  try {
-    const res = await api.markSabotageDone(pickedTeam.value, pickedName.value.trim(), mission.id)
-    missions.value = missions.value.map(m =>
-      m.id === mission.id ? { ...m, done: true, doneAt: res?.doneAt || Date.now() } : m
-    )
-  } catch (e) {
-    error.value = extractServerError(e) || 'Kunde inte rapportera uppdraget. Försök igen.'
-  } finally {
-    markingId.value = null
-  }
-}
 
 function formatTime(ts) {
   if (!ts) return ''
@@ -785,66 +752,6 @@ onMounted(() => {
   text-align: center;
 }
 
-/* ---- text missions ---- */
-
-.mission-card {
-  width: 100%;
-  box-sizing: border-box;
-  text-align: left;
-  border: 1px dashed rgba(255, 85, 102, 0.45);
-  background: rgba(255, 85, 102, 0.06);
-  padding: 12px;
-  margin-bottom: 10px;
-}
-
-.mission-card.is-done {
-  border-color: rgba(0, 255, 136, 0.4);
-  background: rgba(0, 255, 136, 0.05);
-  opacity: 0.85;
-}
-
-.mission-target {
-  font-size: 0.62rem;
-  letter-spacing: 0.16em;
-  color: #ff8896;
-  margin-bottom: 6px;
-  font-weight: 800;
-}
-
-.mission-card.is-done .mission-target { color: #7fe0b0; }
-
-.mission-text {
-  font-size: 0.82rem;
-  line-height: 1.5;
-  color: var(--text);
-  margin-bottom: 10px;
-}
-
-.mission-foot {
-  display: flex;
-  justify-content: flex-end;
-}
-
-.mission-done-btn {
-  background: transparent;
-  border: 1px solid #ff5566;
-  color: #ff5566;
-  font-family: inherit;
-  font-size: 0.65rem;
-  font-weight: 800;
-  letter-spacing: 0.12em;
-  padding: 8px 10px;
-  cursor: pointer;
-}
-.mission-done-btn:hover:not(:disabled) { background: #ff5566; color: #000; }
-.mission-done-btn:disabled { opacity: 0.5; cursor: wait; }
-
-.mission-done-tag {
-  color: var(--c-lime);
-  font-size: 0.68rem;
-  font-weight: 800;
-  letter-spacing: 0.1em;
-}
 
 .role-warning {
   width: 100%;

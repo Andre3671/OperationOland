@@ -264,7 +264,6 @@ export function useAdminTracking() {
     releaseSlot,
     teamRosters,
     mode,
-    sabotageMissions,
     sabotageEffects,
     sabotageLog,
     operationsList,
@@ -1182,5 +1181,5 @@ export function useAdminTracking() {
     if (intervalId) { clearInterval(intervalId); intervalId = null }
   })
 
-  return { activeIdealRoutes, actualRoutes, livePoints, teamSummaries, isLoading, genProgress, error, refresh, debugMode: isSimulationMode, debugPositions, toggleDebug, toggleOperation, updateTeamPosition, snapToIdeal, moveTeamCheckpoint, checkpoints, meetingPoint, globalStart, globalFinish, updateGlobalStart, updateGlobalFinish, setStartByName, setFinishByName, moveStartTo, moveFinishTo, removeCheckpoint, updateCheckpoint, updateMeetingPoint, generateRoutes, avoidHighways, isSimulationMode, isOperationActive, operationStartTime, meetingPointTime, teamProgress, teams, teamCheating, arrivalLog, chatMessages, sendChatMessage, releaseSlot, resetAll, configureSlots, teamRosters, mode, sabotageMissions, sabotageEffects, sabotageLog, operationsList, activeOperationId, createOperation, activateOperation, renameOperation, deleteOperation }
+  return { activeIdealRoutes, actualRoutes, livePoints, teamSummaries, isLoading, genProgress, error, refresh, debugMode: isSimulationMode, debugPositions, toggleDebug, toggleOperation, updateTeamPosition, snapToIdeal, moveTeamCheckpoint, checkpoints, meetingPoint, globalStart, globalFinish, updateGlobalStart, updateGlobalFinish, setStartByName, setFinishByName, moveStartTo, moveFinishTo, removeCheckpoint, updateCheckpoint, updateMeetingPoint, generateRoutes, avoidHighways, isSimulationMode, isOperationActive, operationStartTime, meetingPointTime, teamProgress, teams, teamCheating, arrivalLog, chatMessages, sendChatMessage, releaseSlot, resetAll, configureSlots, teamRosters, mode, sabotageEffects, sabotageLog, operationsList, activeOperationId, createOperation, activateOperation, renameOperation, deleteOperation }
 }

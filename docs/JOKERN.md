@@ -90,7 +90,7 @@ Vill du ändå ha ett rent datalager, gör det som ett separat steg med migrerin
 acceptera att servern måste omdeployas före appbyggena.
 
 Samma resonemang gäller state-nycklarna `sabotageEffects`, `sabotageLog`,
-`sabotageMissions` och endpointsen `/api/sabotage-ability`, `/api/sabotage-done`.
+och endpointen `/api/sabotage-ability`.
 De är interna — låt dem heta som de gör.
 
 ### Filer som ska ändras

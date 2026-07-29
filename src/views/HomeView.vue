@@ -120,14 +120,16 @@
       <!-- Member home: read-only live map of the OWN team's route state
            (live via the join-code WS). No GPS, no arrivals, no anti-cheat. -->
       <div v-else class="member-map">
+        <!-- Deliberately sparse. The agent role badge is gone: it opened a card
+             that only told you you're an agent, and it duplicated the joker
+             button below. Changing identity is a rare, corrective action, so
+             it's a small icon rather than a full-width button. -->
         <header class="member-head">
           <div class="member-head-left">
             <span class="member-team" :style="{ color: memberTeamColor }">{{ memberTeamDisplay }}</span>
             <span class="member-name">{{ memberName }}</span>
           </div>
-          <button class="member-badge" :class="{ 'is-sab': memberIsSaboteur }" @click="memberRoleOpen = true" title="Visa ditt rollkort">
-            {{ memberIsSaboteur ? '🃏 JOKER' : '🎖 AGENT' }}
-          </button>
+          <button class="member-swap" @click="memberChangeIdentity" title="Byt lag eller namn">⇄</button>
         </header>
         <main class="member-map-main">
           <MapView
@@ -142,7 +144,6 @@
           />
         </main>
         <button v-if="memberIsSaboteur" class="member-sab-btn" @click="memberRoleOpen = true">🃏 JOKERKONSOL</button>
-        <button class="switch-op-btn member-id-btn" @click="memberChangeIdentity">⇄ BYT LAG / NAMN</button>
         <RoleReveal
           v-if="memberRoleOpen"
           :initial-team="memberTeam"
@@ -990,10 +991,6 @@ function sendTeamChat() {
   bottom: 52px;
 }
 
-.member-id-btn {
-  bottom: 92px;
-}
-
 /* ---- member map home ---- */
 .member-map {
   position: fixed;
@@ -1043,26 +1040,6 @@ function sendTeamChat() {
   text-overflow: ellipsis;
 }
 
-.member-badge {
-  flex: 0 0 auto;
-  background: rgba(0, 255, 136, 0.08);
-  border: 1px solid rgba(0, 255, 136, 0.45);
-  color: var(--c-lime);
-  font-family: inherit;
-  font-size: 0.68rem;
-  font-weight: 800;
-  letter-spacing: 0.1em;
-  padding: 6px 10px;
-  border-radius: 3px;
-  cursor: pointer;
-}
-
-.member-badge.is-sab {
-  background: rgba(255, 85, 102, 0.1);
-  border-color: rgba(255, 85, 102, 0.55);
-  color: #ff5566;
-}
-
 .member-map-main {
   flex: 1 1 auto;
   position: relative;
@@ -1071,20 +1048,23 @@ function sendTeamChat() {
 
 .member-sab-btn {
   position: fixed;
-  right: 12px;
-  bottom: 12px;
-  z-index: 2000;
-  background: rgba(20, 2, 6, 0.9);
-  border: 1px solid #ff5566;
-  color: #ff5566;
-  font-family: var(--font-mono);
-  font-size: 0.78rem;
-  font-weight: 800;
-  letter-spacing: 0.14em;
-  padding: 13px 16px;
-  border-radius: 4px;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: calc(18px + env(safe-area-inset-bottom));
+  z-index: 950;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font);
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: #fff;
+  background: linear-gradient(135deg, var(--c-violet), var(--primary));
+  border: 0;
+  padding: 15px 26px;
+  border-radius: var(--r-pill);
   cursor: pointer;
-  box-shadow: 0 0 18px rgba(255, 85, 102, 0.35);
+  box-shadow: 0 10px 26px color-mix(in srgb, var(--c-violet) 40%, transparent);
 }
 
 .member-sab-btn:hover {
@@ -1879,4 +1859,17 @@ function sendTeamChat() {
   color: var(--text-3);
   font-variant-numeric: tabular-nums;
 }
+
+.member-swap {
+  width: var(--tap-min);
+  height: var(--tap-min);
+  flex: none;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text-3);
+  font-size: 0.95rem;
+  cursor: pointer;
+}
+.member-swap:hover { background: var(--surface-3); color: var(--text); }
 </style>

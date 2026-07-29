@@ -66,7 +66,6 @@ const teamRosters = ref(cached.teamRosters || makeEmptyMap([]))
 // sightseeing — no photos, no anti-cheat, own position on the map).
 const mode = ref(cached.mode === 'explore' ? 'explore' : 'game')
 // Secret saboteur missions (game mode) — admin-authored, server-owned.
-const sabotageMissions = ref(Array.isArray(cached.sabotageMissions) ? cached.sabotageMissions : [])
 // Active sabotage ability effects + the permanent use log (server-owned;
 // the log doubles as the charge/cooldown ledger on the saboteur's phone).
 const sabotageEffects = ref(Array.isArray(cached.sabotageEffects) ? cached.sabotageEffects : [])
@@ -104,7 +103,6 @@ function applyState(serverState) {
     teamStartTimes.value = serverState.teamStartTimes || makeEmptyMap(null)
     teamRosters.value = serverState.teamRosters || makeEmptyMap([])
     mode.value = serverState.mode === 'explore' ? 'explore' : 'game'
-    sabotageMissions.value = Array.isArray(serverState.sabotageMissions) ? serverState.sabotageMissions : []
     sabotageEffects.value = Array.isArray(serverState.sabotageEffects) ? serverState.sabotageEffects : []
     sabotageLog.value = Array.isArray(serverState.sabotageLog) ? serverState.sabotageLog : []
   } finally {
@@ -242,7 +240,6 @@ makeAdminPatcher('operationStartTime', operationStartTime, { debounce: 300 })
 makeAdminPatcher('meetingPointTime', meetingPointTime, { debounce: 300 })
 makeAdminPatcher('teamRosters', teamRosters)
 makeAdminPatcher('mode', mode, { debounce: 50 })
-makeAdminPatcher('sabotageMissions', sabotageMissions)
 
 // ---- store API ----
 
@@ -472,7 +469,6 @@ export function useSimulationStore() {
     teamStartTimes,
     teamRosters,
     mode,
-    sabotageMissions,
     sabotageEffects,
     sabotageLog,
     operationsList,

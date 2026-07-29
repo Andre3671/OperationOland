@@ -402,6 +402,17 @@ onBeforeUnmount(() => {
   width: 100%;
   height: 100%;
 }
+
+/* Leaflet measures its container on init; a container with no height gives a
+   0px map — blank panel, no tiles, no error. This rule used to live in the
+   global styles.css and was removed as "dead" during the restyle, which is
+   exactly how the admin map broke. It belongs here, next to the markup it
+   sizes. Height is 100% (not 100vh): the parent .admin-mapbg is already
+   inset:0 on the shell, so 100vh would overflow behind the header. */
+.admin-leaflet-map {
+  width: 100%;
+  height: 100%;
+}
 .layer-toggle {
   position: absolute;
   top: 72px;
